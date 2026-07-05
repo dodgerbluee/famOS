@@ -71,7 +71,12 @@ export function SeerrWidget({ compact }: SeerrWidgetProps) {
   if (compact) {
     return (
       <div>
-        <h2 className="text-lg font-semibold text-text-bright mb-3">Media Requests</h2>
+        <div className="flex items-center gap-2 mb-3">
+          <h2 className="text-lg font-semibold text-text-bright">Media Requests</h2>
+          {status.pending > 0 && (
+            <span className="w-2 h-2 rounded-full bg-accent-pink animate-pulse" />
+          )}
+        </div>
         {pills('xs')}
         {pendingList}
       </div>

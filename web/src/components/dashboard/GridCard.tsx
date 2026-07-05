@@ -9,6 +9,7 @@ interface GridCardProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
   gridMode: 'fill' | 'scroll';
   totalRows: number;
+  pulseColor?: 'red' | 'peach' | 'pink';
   onMove: (id: string, col: number, row: number) => void;
   onResize: (id: string, colSpan: number, rowSpan: number) => void;
   onRemove: (id: string) => void;
@@ -30,9 +31,15 @@ interface DragState {
   ghostOffsetY: number;
 }
 
+const PULSE_CLASS: Record<string, string> = {
+  red: 'animate-subtle-pulse animate-subtle-pulse--red',
+  peach: 'animate-subtle-pulse',
+  pink: 'animate-subtle-pulse animate-subtle-pulse--pink',
+};
+
 export function GridCard({
   card, label, editing, allCards, containerRef,
-  gridMode, totalRows, onMove, onResize, onRemove, children,
+  gridMode, totalRows, pulseColor, onMove, onResize, onRemove, children,
 }: GridCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -166,7 +173,7 @@ export function GridCard({
       ref={cardRef}
       className={`bg-surface rounded-2xl relative overflow-hidden ${
         editing ? 'ring-1 ring-surface-lighter' : ''
-      }`}
+      } ${!editing && pulseColor ? PULSE_CLASS[pulseColor] : ''}`}
       style={style}
     >
       {editing && (

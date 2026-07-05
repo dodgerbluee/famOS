@@ -1,7 +1,11 @@
 package api
 
 import (
+	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -179,5 +183,27 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 		ServeWS(hub, w, r)
 	})
 
+	if staticDir := cfg.StaticDir; staticDir != "" {
+		r.NotFound(spaHandler(staticDir))
+	}
+
 	return r
+}
+
+func spaHandler(staticDir string) http.HandlerFunc {
+	fileServer := http.FileServer(http.Dir(staticDir))
+	return func(w http.ResponseWriter, r *http.Request) {
+		path := filepath.Clean(r.URL.Path)
+		if strings.HasPrefix(path, "/api/") || path == "/ws" {
+			http.NotFound(w, r)
+			return
+		}
+		fullPath := filepath.Join(staticDir, path)
+		if _, err := fs.Stat(os.DirFS(staticDir), strings.TrimPrefix(path, "/")); err != nil {
+			http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
+			return
+		}
+		_ = fullPath
+		fileServer.ServeHTTP(w, r)
+	}
 }

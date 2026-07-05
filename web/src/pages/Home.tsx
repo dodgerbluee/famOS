@@ -50,6 +50,8 @@ export function Home() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [layout, setLayout] = useState<DashboardLayout>(DEFAULT_GRID_LAYOUT);
   const [editing, setEditing] = useState(false);
+  const [serviceStatus, setServiceStatus] = useState<{ failing: number; unstable: number }>({ failing: 0, unstable: 0 });
+  const [mediaPending, setMediaPending] = useState(0);
   const gridRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const timezone = useTimezone();
@@ -80,6 +82,12 @@ export function Home() {
     loadAccounts();
     loadScheduleEvents();
     api.get<WeatherData>('/api/weather').then(setWeather).catch(() => {});
+    api.get<{ failing: number; unstable: number }>('/api/gatus/status')
+      .then((s) => setServiceStatus({ failing: s.failing, unstable: s.unstable }))
+      .catch(() => {});
+    api.get<{ pending: number }>('/api/seerr/requests')
+      .then((s) => setMediaPending(s.pending))
+      .catch(() => {});
     api.get<Record<string, string>>('/api/settings').then((settings) => {
       if (settings.home_layout) {
         try {
@@ -254,6 +262,15 @@ export function Home() {
   const weatherIcon = weather ? CONDITION_ICONS[weather.condition] || '🌤️' : '';
   const hiddenCards = CARD_DEFS.filter((d) => !layout.cards.some((c) => c.id === d.id));
 
+  const cardPulse = (id: string): 'red' | 'peach' | 'pink' | undefined => {
+    if (id === 'services') {
+      if (serviceStatus.failing > 0) return 'red';
+      if (serviceStatus.unstable > 0) return 'peach';
+    }
+    if (id === 'media' && mediaPending > 0) return 'pink';
+    return undefined;
+  };
+
   return (
     <div className="flex flex-col h-full -m-4">
       {/* Header */}
@@ -263,11 +280,6 @@ export function Home() {
           <p className="text-text-dim text-sm">
             {formatDate(now, timezone, { weekday: 'long', month: 'long', day: 'numeric' })}
           </p>
-          {weather && (
-            <p className="text-text-dim text-xs mt-1">
-              Sunrise {formatTime(weather.sunrise, timezone)} · Sunset {formatTime(weather.sunset, timezone)}
-            </p>
-          )}
         </div>
         <div className="flex items-center gap-3 text-right">
           <button
@@ -285,12 +297,19 @@ export function Home() {
           {weather && (
             <button
               onClick={() => navigate('/weather')}
-              className="flex items-center gap-2 active:scale-95 transition-transform"
+              className="flex items-center gap-2.5 active:scale-95 transition-transform"
             >
               <span className="text-xl">{weatherIcon}</span>
-              <div>
-                <p className="text-text-bright text-xl font-bold leading-none">{Math.round(weather.temperature)}°</p>
-                <p className="text-text-dim text-[11px] leading-none mt-1">↑ {Math.round(weather.high)}° · ↓ {Math.round(weather.low)}°</p>
+              <div className="text-left">
+                <div className="flex items-end gap-1.5">
+                  <p className="text-text-bright text-xl font-bold leading-none">{Math.round(weather.temperature)}°</p>
+                  <p className="text-text-dim text-[11px] leading-none mb-0.5">↑{Math.round(weather.high)}° ↓{Math.round(weather.low)}°</p>
+                </div>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <HeaderSunItem icon="sunrise" time={formatTime(weather.sunrise, timezone)} />
+                  <HeaderSunItem icon="sunset" time={formatTime(weather.sunset, timezone)} />
+                  <HeaderSunItem icon="dusk" time={formatTime(weather.dusk || estimateDusk(weather.sunset), timezone)} />
+                </div>
               </div>
             </button>
           )}
@@ -321,7 +340,7 @@ export function Home() {
       )}
 
       {/* Grid */}
-      <div className={`flex-1 px-4 pb-4 ${layout.mode === 'scroll' ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+      <div className={`flex-1 p-4 ${layout.mode === 'scroll' ? 'overflow-y-auto' : 'overflow-hidden'}`}>
         <DashboardGrid layout={layout} editing={editing} containerRef={gridRef}>
           {layout.cards.map((card) => {
             const def = CARD_DEFS.find((d) => d.id === card.id);
@@ -336,6 +355,7 @@ export function Home() {
                 containerRef={gridRef}
                 gridMode={layout.mode}
                 totalRows={layout.totalRows}
+                pulseColor={cardPulse(card.id)}
                 onMove={handleMove}
                 onResize={handleResize}
                 onRemove={handleRemove}
@@ -393,4 +413,45 @@ function getGreeting(date: Date, timezone: string): string {
   if (hour < 12) return 'Good Morning';
   if (hour < 17) return 'Good Afternoon';
   return 'Good Evening';
+}
+
+function estimateDusk(sunset: string) {
+  if (!sunset) return '';
+  const date = new Date(sunset);
+  if (Number.isNaN(date.getTime())) return '';
+  date.setMinutes(date.getMinutes() + 30);
+  return date.toISOString();
+}
+
+const SUN_ICONS = {
+  sunrise: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2v3" stroke="#f59e0b" />
+      <path d="M5.64 11.64l1.41 1.41M16.95 11.64l-1.41 1.41" stroke="#f59e0b" />
+      <path d="M18 18a6 6 0 0 0-12 0" stroke="#f59e0b" />
+      <path d="M2 18h20" stroke="#f59e0b" />
+    </svg>
+  ),
+  sunset: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 8v3" stroke="#fb923c" />
+      <path d="M5.64 11.64l1.41 1.41M16.95 11.64l-1.41 1.41" stroke="#fb923c" />
+      <path d="M18 18a6 6 0 0 0-12 0" stroke="#fb923c" />
+      <path d="M2 18h20" stroke="#fb923c" />
+    </svg>
+  ),
+  dusk: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z" stroke="#94a3b8" />
+    </svg>
+  ),
+} as const;
+
+function HeaderSunItem({ icon, time }: { icon: keyof typeof SUN_ICONS; time: string }) {
+  return (
+    <span className="flex items-center gap-0.5">
+      {SUN_ICONS[icon]}
+      <span className="text-text-dim text-[10px] font-medium">{time}</span>
+    </span>
+  );
 }

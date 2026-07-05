@@ -63,9 +63,9 @@ export function WeatherCard({ compact }: WeatherCardProps) {
       <div className="space-y-2.5">
         <h2 className="text-lg font-semibold text-text-bright">Weather</h2>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <span className="text-3xl">{icon}</span>
-          <div className="min-w-0 flex flex-wrap items-center gap-3 flex-1">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="text-3xl">{icon}</span>
             <div>
               <div className="flex items-end gap-2">
                 <p className="text-text-bright text-2xl font-bold leading-none">
@@ -81,8 +81,8 @@ export function WeatherCard({ compact }: WeatherCardProps) {
                   : ''}
               </p>
             </div>
-            <SunTimes weather={weather} timezone={timezone} compact dusk={dusk} />
           </div>
+          <SunTimes weather={weather} timezone={timezone} compact dusk={dusk} />
         </div>
 
         <StatGrid weather={weather} aq={aq} />
@@ -165,11 +165,7 @@ export function WeatherCard({ compact }: WeatherCardProps) {
               </div>
             </div>
           </div>
-          <div className="text-left text-sm leading-tight shrink-0 min-w-[92px]">
-            <p className="text-amber-200 font-medium">Rise {formatTime(weather.sunrise, timezone)}</p>
-            <p className="text-orange-200 font-medium">Set {formatTime(weather.sunset, timezone)}</p>
-            {dusk && <p className="text-violet-200 font-medium">Dusk {formatTime(dusk, timezone)}</p>}
-          </div>
+          <SunTimes weather={weather} timezone={timezone} dusk={dusk} />
         </div>
       </div>
 
@@ -370,22 +366,65 @@ function StatGrid({ weather, aq }: { weather: WeatherData; aq?: AirQuality | nul
 
 function SunTimes({ weather, timezone, compact, dusk }: { weather: WeatherData; timezone: string; compact?: boolean; dusk?: string }) {
   return (
-    <div className={`w-fit rounded-xl border border-amber-300/15 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-violet-500/10 ${compact ? 'px-2 py-1.5 max-w-[180px]' : 'px-3 py-2 max-w-[260px] ml-auto'}`}>
-      <div className={`grid ${dusk ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
-        <SunTime value={formatTime(weather.sunrise, timezone)} accent="text-amber-200" icon="Sunrise" compact={compact} />
-        <SunTime value={formatTime(weather.sunset, timezone)} accent="text-orange-200" icon="Sunset" compact={compact} />
-        {dusk && <SunTime value={formatTime(dusk, timezone)} accent="text-violet-200" icon="Dusk" compact={compact} />}
+    <div className={`shrink-0 rounded-xl bg-surface-light/60 border border-surface-lighter/50 ${compact ? 'px-2.5 py-2' : 'px-3 py-2.5 ml-auto'}`}>
+      <div className={`flex items-center ${compact ? 'gap-3' : 'gap-4'}`}>
+        <SunTimeItem
+          value={formatTime(weather.sunrise, timezone)}
+          icon={<SunriseIcon />}
+          compact={compact}
+        />
+        <SunTimeItem
+          value={formatTime(weather.sunset, timezone)}
+          icon={<SunsetIcon />}
+          compact={compact}
+        />
+        {dusk && (
+          <SunTimeItem
+            value={formatTime(dusk, timezone)}
+            icon={<DuskIcon />}
+            compact={compact}
+          />
+        )}
       </div>
     </div>
   );
 }
 
-function SunTime({ value, accent, icon, compact }: { value: string; accent: string; icon: string; compact?: boolean }) {
+function SunTimeItem({ value, icon, compact }: { value: string; icon: React.ReactNode; compact?: boolean }) {
   return (
-    <div className="min-w-0 text-center">
-      <p className={`text-[9px] uppercase tracking-[0.16em] ${accent}`}>{icon}</p>
-      <p className={`text-text-bright font-semibold ${compact ? 'text-xs' : 'text-sm'}`}>{value}</p>
+    <div className="flex items-center gap-1.5 min-w-0">
+      <span className="shrink-0">{icon}</span>
+      <p className={`text-text-bright font-medium ${compact ? 'text-xs' : 'text-sm'}`}>{value}</p>
     </div>
+  );
+}
+
+function SunriseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2v4M4.93 10.93l1.41 1.41M2 18h2M20 18h2M17.66 12.34l1.41-1.41" />
+      <path d="M18 18a6 6 0 0 0-12 0" />
+      <path d="M12 2l3 3M12 2l-3 3" stroke="#f59e0b" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function SunsetIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fb923c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 10v-4M4.93 10.93l1.41 1.41M2 18h2M20 18h2M17.66 12.34l1.41-1.41" />
+      <path d="M18 18a6 6 0 0 0-12 0" />
+      <path d="M12 10l3-3M12 10l-3-3" stroke="#fb923c" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function DuskIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z" fill="none" />
+      <path d="M2 18h20" strokeWidth="1.5" />
+    </svg>
   );
 }
 

@@ -46,3 +46,17 @@ html, body, #root {
   background: var(--color-surface-lighter);
   border-radius: 2px;
 }
+
+@keyframes subtle-pulse {
+  0%, 100% { outline-color: transparent; }
+  50% { outline-color: var(--pulse-color, var(--color-accent-peach)); }
+}
+
+.animate-subtle-pulse {
+  animation: subtle-pulse 3s ease-in-out infinite;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+}
+
+.animate-subtle-pulse--red { --pulse-color: var(--color-accent-red); }
+.animate-subtle-pulse--pink { --pulse-color: var(--color-accent-pink); }

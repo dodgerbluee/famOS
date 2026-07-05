@@ -65,7 +65,15 @@ export function GatusWidget({ compact }: GatusWidgetProps) {
   if (compact) {
     return (
       <div>
-        <h2 className="text-lg font-semibold text-text-bright mb-3">Services</h2>
+        <div className="flex items-center gap-2 mb-3">
+          <h2 className="text-lg font-semibold text-text-bright">Services</h2>
+          {status.failing > 0 && (
+            <span className="w-2 h-2 rounded-full bg-accent-red animate-pulse" />
+          )}
+          {status.failing === 0 && status.unstable > 0 && (
+            <span className="w-2 h-2 rounded-full bg-accent-peach animate-pulse" />
+          )}
+        </div>
         <div className="flex flex-col items-start gap-1.5">
           <StatusPill count={status.healthy} total={status.total} kind="healthy" />
           <StatusPill count={status.unstable} total={status.total} kind="unstable" />

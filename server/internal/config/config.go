@@ -38,6 +38,7 @@ type Config struct {
 
 	// Frontend
 	FrontendURL string
+	StaticDir   string
 	Timezone    string
 }
 
@@ -72,6 +73,7 @@ func Load() *Config {
 		LocationLon: envFloat("LOCATION_LON", 0),
 
 		FrontendURL: envStr("FRONTEND_URL", "http://localhost:5173"),
+		StaticDir:   envStr("STATIC_DIR", ""),
 		Timezone:    timezone,
 	}
 }
