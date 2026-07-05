@@ -1,0 +1,31 @@
+services:
+  api:
+    build: ./server
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      - DATABASE_PATH=/data/sandershome.db
+      - PORT=8080
+      - AI_PROVIDER=ollama
+      - OLLAMA_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=llama3.1
+      - FRIGATE_URL=${FRIGATE_URL:-http://host.docker.internal:5000}
+      - MQTT_BROKER=${MQTT_BROKER:-tcp://host.docker.internal:1883}
+      - HA_URL=${HA_URL:-http://host.docker.internal:8123}
+      - HA_TOKEN=${HA_TOKEN:-}
+      - LOCATION_LAT=${LOCATION_LAT:-0}
+      - LOCATION_LON=${LOCATION_LON:-0}
+      - SESSION_SECRET=${SESSION_SECRET:-change-me-in-production}
+      - FRONTEND_URL=http://localhost:3000
+      - TZ=${TZ:-UTC}
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    restart: unless-stopped

@@ -1,0 +1,7 @@
+data/
+.env
+node_modules/
+dist/
+server/sandershome
+web/dist/
+*.db
