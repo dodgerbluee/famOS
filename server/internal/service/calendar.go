@@ -75,6 +75,7 @@ func (s *CalendarService) ListSources() ([]CalendarSource, error) {
 			&src.Color, &src.SyncIntervalMin, &src.LastSyncedAt, &src.Active); err != nil {
 			return nil, err
 		}
+		src.Type = displayCalendarSourceType(src.Type, src.URL)
 		sources = append(sources, src)
 	}
 	return sources, nil
@@ -84,6 +85,7 @@ func (s *CalendarService) CreateSource(name, srcType, url, calendarName, usernam
 	if syncInterval <= 0 {
 		syncInterval = 5
 	}
+	srcType = storageCalendarSourceType(srcType)
 	id := uuid.New().String()
 	_, err := s.db.Exec(`
 		INSERT INTO calendar_sources (id, name, type, url, calendar_name, username, password_encrypted, color, sync_interval_min)
@@ -105,7 +107,8 @@ func (s *CalendarService) UpdateSource(id string, name, srcType, url, calendarNa
 		}
 	}
 	if srcType != nil {
-		if _, err := s.db.Exec(`UPDATE calendar_sources SET type = ? WHERE id = ?`, *srcType, id); err != nil {
+		mappedType := storageCalendarSourceType(*srcType)
+		if _, err := s.db.Exec(`UPDATE calendar_sources SET type = ? WHERE id = ?`, mappedType, id); err != nil {
 			return err
 		}
 	}
@@ -145,6 +148,25 @@ func (s *CalendarService) UpdateSource(id string, name, srcType, url, calendarNa
 		}
 	}
 	return nil
+}
+
+func storageCalendarSourceType(srcType string) string {
+	if srcType == "google_calendar" {
+		return "ics_url"
+	}
+	return srcType
+}
+
+func displayCalendarSourceType(srcType, url string) string {
+	if srcType == "ics_url" && isGoogleCalendarURL(url) {
+		return "google_calendar"
+	}
+	return srcType
+}
+
+func isGoogleCalendarURL(raw string) bool {
+	url := strings.ToLower(strings.TrimSpace(raw))
+	return strings.Contains(url, "calendar.google.com") || strings.Contains(url, "googleusercontent.com/calendar")
 }
 
 func (s *CalendarService) DeleteSource(id string) error {

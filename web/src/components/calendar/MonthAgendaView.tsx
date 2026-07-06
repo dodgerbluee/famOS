@@ -1,6 +1,7 @@
 import { EventCard } from './EventCard';
 import type { CalendarEvent } from '../../api/client';
-import { getCalendarEventDateKey } from '../../lib/calendar';
+import { getCalendarEventDateKey, getEventVisualState } from '../../lib/calendar';
+import { useEffect, useRef } from 'react';
 import { formatDate, fromDateKey, getDateKey, getDateParts, useTimezone } from '../../lib/timezone';
 
 interface MonthAgendaViewProps {
@@ -9,10 +10,13 @@ interface MonthAgendaViewProps {
   onDaySelect?: (date: Date) => void;
   onEventSelect?: (event: CalendarEvent) => void;
   referenceTime?: Date;
+  autoScrollRelevant?: boolean;
 }
 
-export function MonthAgendaView({ date, events, onDaySelect, onEventSelect, referenceTime }: MonthAgendaViewProps) {
+export function MonthAgendaView({ date, events, onDaySelect, onEventSelect, referenceTime, autoScrollRelevant = false }: MonthAgendaViewProps) {
   const timezone = useTimezone();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const dayRefs = useRef<Array<HTMLDivElement | null>>([]);
   const { year, month } = getDateParts(date, timezone);
   const lastDay = new Date(Date.UTC(year, month, 0, 12));
   const today = getDateKey(new Date(), timezone);
@@ -26,14 +30,28 @@ export function MonthAgendaView({ date, events, onDaySelect, onEventSelect, refe
 
   const visibleDays = days.filter((day) => eventsByDay(day).length > 0);
 
+  useEffect(() => {
+    if (!autoScrollRelevant || !referenceTime || !containerRef.current) return;
+    const targetIndex = visibleDays.findIndex((day) => {
+      const dayEvents = eventsByDay(day);
+      return dayEvents.some((event) => getEventVisualState(event, referenceTime) !== 'muted');
+    });
+    const index = targetIndex >= 0 ? targetIndex : 0;
+    const target = dayRefs.current[index];
+    if (target) {
+      containerRef.current.scrollTop = Math.max(0, target.offsetTop - 8);
+    }
+  }, [autoScrollRelevant, referenceTime, visibleDays]);
+
   return (
-    <div className="space-y-3">
-      {visibleDays.map((day) => {
+    <div ref={containerRef} className="space-y-3 overflow-y-auto max-h-[22rem] pr-1">
+      {visibleDays.map((day, index) => {
         const dayEvents = eventsByDay(day);
         const isToday = getDateKey(day, timezone) === today;
 
         return (
           <div
+            ref={(el) => { dayRefs.current[index] = el; }}
             key={day.toISOString()}
             className={`rounded-xl p-3 ${isToday ? 'bg-primary/10 ring-1 ring-primary/30' : 'bg-surface-light'}`}
             onClick={() => onDaySelect?.(day)}

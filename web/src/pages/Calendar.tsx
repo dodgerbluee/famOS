@@ -156,7 +156,7 @@ export function Calendar() {
         ))}
       </div>
 
-      <div className="bg-surface rounded-2xl p-4">
+      <div className={`bg-surface rounded-2xl p-4 ${viewMode === 'month' ? 'min-h-[calc(100vh-220px)]' : ''}`}>
         {viewMode === 'day' && (
           <DayView
             date={currentDate}

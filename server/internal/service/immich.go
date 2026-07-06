@@ -48,14 +48,17 @@ func (s *ImmichService) getConfig() (*ImmichConfig, error) {
 }
 
 type ImmichAsset struct {
-	ID string `json:"id"`
+	ID        string `json:"id"`
+	CreatedAt string `json:"createdAt"`
 }
 
 type searchResponse struct {
 	Assets struct {
 		Items []struct {
-			ID   string `json:"id"`
-			Type string `json:"type"`
+			ID          string `json:"id"`
+			Type        string `json:"type"`
+			FileCreated string `json:"fileCreatedAt"`
+			LocalDate   string `json:"localDateTime"`
 		} `json:"items"`
 	} `json:"assets"`
 }
@@ -69,48 +72,69 @@ func (s *ImmichService) GetAlbumPhotos(ctx context.Context) ([]ImmichAsset, erro
 		return nil, fmt.Errorf("screensaver album not configured")
 	}
 
-	body, _ := json.Marshal(map[string]any{
-		"albumIds": []string{cfg.AlbumID},
-		"type":     "IMAGE",
-		"size":     200,
-		"page":     1,
-	})
+	const pageSize = 500
+	const maxPages = 20
+	photos := make([]ImmichAsset, 0, pageSize)
+	seen := make(map[string]struct{}, pageSize)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		cfg.URL+"/api/search/metadata", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("x-api-key", cfg.APIKey)
-	req.Header.Set("Content-Type", "application/json")
+	for page := 1; page <= maxPages; page++ {
+		body, _ := json.Marshal(map[string]any{
+			"albumIds": []string{cfg.AlbumID},
+			"type":     "IMAGE",
+			"size":     pageSize,
+			"page":     page,
+		})
 
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("immich unreachable: %w", err)
-	}
-	defer resp.Body.Close()
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			cfg.URL+"/api/search/metadata", bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("x-api-key", cfg.APIKey)
+		req.Header.Set("Content-Type", "application/json")
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("immich returned %d", resp.StatusCode)
+		resp, err := s.client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("immich unreachable: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("immich returned %d", resp.StatusCode)
+		}
+
+		var result searchResponse
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("decode immich response: %w", err)
+		}
+		resp.Body.Close()
+
+		for _, item := range result.Assets.Items {
+			if _, ok := seen[item.ID]; ok {
+				continue
+			}
+			seen[item.ID] = struct{}{}
+			createdAt := item.FileCreated
+			if createdAt == "" {
+				createdAt = item.LocalDate
+			}
+			photos = append(photos, ImmichAsset{ID: item.ID, CreatedAt: createdAt})
+		}
+
+		if len(result.Assets.Items) < pageSize {
+			break
+		}
 	}
 
-	var result searchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode immich response: %w", err)
-	}
-
-	photos := make([]ImmichAsset, 0, len(result.Assets.Items))
-	for _, item := range result.Assets.Items {
-		photos = append(photos, ImmichAsset{ID: item.ID})
-	}
 	return photos, nil
 }
 
 type TestResult struct {
-	OK        bool   `json:"ok"`
-	Message   string `json:"message"`
-	AlbumName string `json:"albumName,omitempty"`
-	PhotoCount int   `json:"photoCount,omitempty"`
+	OK         bool   `json:"ok"`
+	Message    string `json:"message"`
+	AlbumName  string `json:"albumName,omitempty"`
+	PhotoCount int    `json:"photoCount,omitempty"`
 }
 
 func (s *ImmichService) TestConnection(ctx context.Context) TestResult {

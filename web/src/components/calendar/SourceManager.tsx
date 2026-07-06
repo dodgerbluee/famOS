@@ -13,7 +13,7 @@ export function SourceManager() {
   const [syncErrors, setSyncErrors] = useState<Record<string, string>>({});
   const [form, setForm] = useState({
     name: '',
-    type: 'ics_url' as 'caldav' | 'ics_url',
+    type: 'ics_url' as 'caldav' | 'ics_url' | 'google_calendar',
     url: '',
     calendarName: '',
     username: '',
@@ -154,7 +154,7 @@ export function SourceManager() {
           />
 
           <div className="flex gap-2">
-            {(['ics_url', 'caldav'] as const).map((t) => (
+            {(['ics_url', 'google_calendar', 'caldav'] as const).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -163,19 +163,25 @@ export function SourceManager() {
                   form.type === t ? 'bg-primary text-white' : 'bg-surface-lighter text-text-dim'
                 }`}
               >
-                {t === 'ics_url' ? 'ICS URL' : 'CalDAV'}
+                {t === 'ics_url' ? 'ICS URL' : t === 'google_calendar' ? 'Google Calendar' : 'CalDAV'}
               </button>
             ))}
           </div>
 
           <input
             type="url"
-            placeholder={form.type === 'caldav' ? 'Specific calendar URL or CalDAV account URL' : 'ICS feed URL'}
+            placeholder={form.type === 'caldav' ? 'Specific calendar URL or CalDAV account URL' : form.type === 'google_calendar' ? 'Google Calendar ICS URL' : 'ICS feed URL'}
             value={form.url}
             onChange={(e) => setForm({ ...form, url: e.target.value })}
             className="w-full bg-surface-lighter text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
             required
           />
+
+          {form.type === 'google_calendar' && (
+            <p className="text-text-dim text-xs">
+              Paste the Google Calendar private secret ICS URL from Google Calendar settings. You do not need to make the calendar public. This syncs through Google&apos;s private iCal feed and does not use OAuth.
+            </p>
+          )}
 
           {form.type === 'caldav' && (
             <>
@@ -260,7 +266,7 @@ export function SourceManager() {
             <div className="flex-1">
               <p className="text-text-bright font-medium">{src.name}</p>
               <p className="text-text-dim text-xs">
-                {src.type === 'caldav' ? 'CalDAV' : 'ICS URL'}
+                {src.type === 'caldav' ? 'CalDAV' : src.type === 'google_calendar' ? 'Google Calendar' : 'ICS URL'}
                 {src.calendarName && ` · Calendar: ${src.calendarName}`}
                 {src.lastSyncedAt && ` · Last sync: ${formatDate(parseSqliteUtc(src.lastSyncedAt), timezone, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}`}
               </p>

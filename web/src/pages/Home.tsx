@@ -204,7 +204,7 @@ export function Home() {
               </div>
               <button onClick={() => navigate('/calendar')} className="text-primary-light text-sm font-medium">View All →</button>
             </div>
-            <WeekView startDate={viewWeekStart} events={scheduleEvents} referenceTime={now} showHeader={false} />
+            <WeekView startDate={viewWeekStart} events={scheduleEvents} referenceTime={now} showHeader={false} autoScrollRelevant />
           </>
         );
 
@@ -215,7 +215,7 @@ export function Home() {
               <h2 className="text-lg font-semibold text-text-bright">This Month</h2>
               <span className="text-primary-light text-sm font-medium">View All →</span>
             </div>
-            <MonthAgendaView date={now} events={scheduleEvents} referenceTime={now} />
+            <MonthAgendaView date={now} events={scheduleEvents} referenceTime={now} autoScrollRelevant />
           </div>
         );
 

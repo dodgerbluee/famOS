@@ -62,7 +62,7 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
         </button>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 mb-1">
+        <div className="grid grid-cols-7 gap-1 mb-1">
         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
           <div key={d} className="text-center text-text-dim text-xs font-medium py-1">
             {d}
@@ -70,10 +70,10 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
         ))}
       </div>
 
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-1 auto-rows-fr min-h-[calc(100vh-320px)]">
         {days.map((day, i) => {
           if (!day) {
-            return <div key={`empty-${i}`} className="min-h-[80px] sm:min-h-[100px]" />;
+            return <div key={`empty-${i}`} className="min-h-[96px] lg:min-h-[124px]" />;
           }
 
           const dayEvents = eventsOnDay(day);
@@ -85,7 +85,7 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
             <div
               key={day.toISOString()}
               onClick={() => onDaySelect?.(day)}
-              className={`rounded-lg p-1 min-h-[80px] sm:min-h-[100px] cursor-pointer transition-colors flex flex-col ${
+                className={`rounded-lg p-1 min-h-[96px] lg:min-h-[124px] cursor-pointer transition-colors flex flex-col ${
                 isToday
                   ? 'bg-primary/10 ring-1 ring-primary/40'
                   : dayEvents.length > 0

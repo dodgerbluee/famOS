@@ -55,8 +55,8 @@ func (h *CalendarHandler) CreateSource(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name, url, and color are required")
 		return
 	}
-	if req.Type != "caldav" && req.Type != "ics_url" {
-		writeError(w, http.StatusBadRequest, "type must be 'caldav' or 'ics_url'")
+	if req.Type != "caldav" && req.Type != "ics_url" && req.Type != "google_calendar" {
+		writeError(w, http.StatusBadRequest, "type must be 'caldav', 'ics_url', or 'google_calendar'")
 		return
 	}
 

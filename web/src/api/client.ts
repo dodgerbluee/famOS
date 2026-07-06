@@ -99,7 +99,7 @@ export interface Redemption {
 export interface CalendarSource {
   id: string;
   name: string;
-  type: 'caldav' | 'ics_url';
+  type: 'caldav' | 'ics_url' | 'google_calendar';
   url: string;
   calendarName: string;
   username: string;
