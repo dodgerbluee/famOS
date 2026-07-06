@@ -1,7 +1,7 @@
 import { EventCard } from './EventCard';
 import type { CalendarEvent } from '../../api/client';
 import { getCalendarEventDateKey } from '../../lib/calendar';
-import { formatDate, getDateKey, useTimezone } from '../../lib/timezone';
+import { formatDate, fromDateKey, getDateKey, getDateParts, useTimezone } from '../../lib/timezone';
 
 interface MonthAgendaViewProps {
   date: Date;
@@ -13,12 +13,11 @@ interface MonthAgendaViewProps {
 
 export function MonthAgendaView({ date, events, onDaySelect, onEventSelect, referenceTime }: MonthAgendaViewProps) {
   const timezone = useTimezone();
-  const year = date.getFullYear();
-  const month = date.getMonth();
-  const lastDay = new Date(year, month + 1, 0, 12);
+  const { year, month } = getDateParts(date, timezone);
+  const lastDay = new Date(Date.UTC(year, month, 0, 12));
   const today = getDateKey(new Date(), timezone);
 
-  const days = Array.from({ length: lastDay.getDate() }, (_, index) => new Date(year, month, index + 1, 12));
+  const days = Array.from({ length: lastDay.getUTCDate() }, (_, index) => fromDateKey(`${year}-${String(month).padStart(2, '0')}-${String(index + 1).padStart(2, '0')}`, timezone));
 
   const eventsByDay = (day: Date) => {
     const dayStr = getDateKey(day, timezone);

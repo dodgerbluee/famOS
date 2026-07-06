@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"path"
@@ -49,7 +50,7 @@ func (t *basicAuthTransport) RoundTrip(req *http.Request) (*http.Response, error
 }
 
 func (c *CalDAVClient) FetchCalDAV(ctx context.Context, endpoint, username, password, calendarName, sourceName string) ([]ParsedEvent, error) {
-	client, calendarPath, err := c.resolveCalendar(ctx, endpoint, username, password, calendarName, sourceName)
+	client, paths, err := c.resolveCalendars(ctx, endpoint, username, password, calendarName, sourceName)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +62,6 @@ func (c *CalDAVClient) FetchCalDAV(ctx context.Context, endpoint, username, pass
 			transport: http.DefaultTransport,
 		},
 	}
-	meta, _ := c.getCalendarMetadata(ctx, authClient, endpoint, calendarPath)
 
 	now := time.Now()
 	start := now.AddDate(0, -6, 0)
@@ -78,28 +78,31 @@ func (c *CalDAVClient) FetchCalDAV(ctx context.Context, endpoint, username, pass
 		},
 	}
 
-	objects, err := client.QueryCalendar(ctx, calendarPath, query)
-	if err != nil {
-		return nil, fmt.Errorf("query calendar: %w", err)
-	}
-
 	var allEvents []ParsedEvent
-	for _, obj := range objects {
-		if obj.Data == nil {
+	for _, cp := range paths {
+		meta, _ := c.getCalendarMetadata(ctx, authClient, endpoint, cp.path)
+
+		objects, err := client.QueryCalendar(ctx, cp.path, query)
+		if err != nil {
+			log.Printf("query calendar %s: %v", cp.name, err)
 			continue
 		}
 
-		for _, comp := range obj.Data.Children {
-			if comp.Name != ical.CompEvent {
+		for _, obj := range objects {
+			if obj.Data == nil {
 				continue
 			}
-
-			ev := ical.Event{Component: comp}
-			parsed := parsedFromICalEvent(ev, c.location)
-			parsed.CalendarName = firstNonEmptyCalendar(meta.Name, calendarName, sourceName)
-			parsed.CalendarColor = meta.Color
-			if parsed.UID != "" && !parsed.StartAt.IsZero() {
-				allEvents = append(allEvents, parsed)
+			for _, comp := range obj.Data.Children {
+				if comp.Name != ical.CompEvent {
+					continue
+				}
+				ev := ical.Event{Component: comp}
+				parsed := parsedFromICalEvent(ev, c.location)
+				parsed.CalendarName = firstNonEmptyCalendar(meta.Name, cp.name, sourceName)
+				parsed.CalendarColor = meta.Color
+				if parsed.UID != "" && !parsed.StartAt.IsZero() {
+					allEvents = append(allEvents, parsed)
+				}
 			}
 		}
 	}
@@ -132,10 +135,11 @@ func (c *CalDAVClient) FetchICSURL(ctx context.Context, url string) ([]ParsedEve
 }
 
 func (c *CalDAVClient) CreateCalDAVEvent(ctx context.Context, endpoint, username, password, calendarName, sourceName, title, description, location string, startAt, endAt time.Time, allDay bool) (ParsedEvent, error) {
-	client, calendarPath, err := c.resolveCalendar(ctx, endpoint, username, password, calendarName, sourceName)
+	client, paths, err := c.resolveCalendars(ctx, endpoint, username, password, calendarName, sourceName)
 	if err != nil {
 		return ParsedEvent{}, err
 	}
+	calendarPath := paths[0].path
 
 	uid := uuid.NewString()
 	calendar := ical.NewCalendar()
@@ -222,40 +226,50 @@ func (c *CalDAVClient) ListCalendars(ctx context.Context, endpoint, username, pa
 	return result, nil
 }
 
-func (c *CalDAVClient) resolveCalendar(ctx context.Context, endpoint, username, password, calendarName, sourceName string) (*caldav.Client, string, error) {
+type calendarPath struct {
+	name string
+	path string
+}
+
+func (c *CalDAVClient) resolveCalendars(ctx context.Context, endpoint, username, password, calendarName, sourceName string) (*caldav.Client, []calendarPath, error) {
 	client, calendars, err := c.discoverCalendars(ctx, endpoint, username, password)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 
 	endpointPath, err := calendarPathFromEndpoint(endpoint)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 
 	for _, cal := range calendars {
 		if normalizeCalendarPath(cal.Path) == endpointPath {
-			return client, cal.Path, nil
+			return client, []calendarPath{{name: cal.Name, path: cal.Path}}, nil
 		}
 	}
 
 	for _, cal := range calendars {
 		if calendarName != "" && strings.EqualFold(strings.TrimSpace(cal.Name), strings.TrimSpace(calendarName)) {
-			return client, cal.Path, nil
+			return client, []calendarPath{{name: cal.Name, path: cal.Path}}, nil
 		}
 	}
 
 	for _, cal := range calendars {
 		if sourceName != "" && strings.EqualFold(strings.TrimSpace(cal.Name), strings.TrimSpace(sourceName)) {
-			return client, cal.Path, nil
+			return client, []calendarPath{{name: cal.Name, path: cal.Path}}, nil
 		}
 	}
 
-	if len(calendars) == 1 {
-		return client, calendars[0].Path, nil
+	if len(calendars) == 0 {
+		return nil, nil, fmt.Errorf("no calendars found")
 	}
 
-	return nil, "", fmt.Errorf("could not resolve writable calendar from URL; use the specific calendar URL for this source")
+	// No specific match — sync all calendars on this account
+	paths := make([]calendarPath, len(calendars))
+	for i, cal := range calendars {
+		paths[i] = calendarPath{name: cal.Name, path: cal.Path}
+	}
+	return client, paths, nil
 }
 
 func (c *CalDAVClient) discoverCalendars(ctx context.Context, endpoint, username, password string) (*caldav.Client, []caldav.Calendar, error) {

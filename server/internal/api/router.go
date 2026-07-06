@@ -68,7 +68,7 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 	}
 	calendarHandler := NewCalendarHandler(svc.Calendar, hub, loc)
 	weatherHandler := NewWeatherHandler(svc.Weather)
-	aiHandler := NewAIHandler(svc.AI, svc.Weather, svc.Calendar, svc.Cash)
+	aiHandler := NewAIHandler(svc.AI, svc.Weather, svc.Calendar, svc.Cash, loc)
 	camerasHandler := NewCamerasHandler(svc.Frigate, hub)
 	settingsHandler := &SettingsHandler{db: database, frigate: svc.Frigate}
 	aiProvidersHandler := NewAIProvidersHandler(database, svc.AI, cfg)
@@ -169,6 +169,11 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 	})
 
 	r.Get("/api/vikunja/tasks", vikunjaHandler.GetTasks)
+
+	immichHandler := NewImmichHandler(service.NewImmichService(database))
+	r.Post("/api/immich/test", immichHandler.Test)
+	r.Get("/api/immich/album", immichHandler.GetAlbum)
+	r.Get("/api/immich/assets/{id}", immichHandler.ProxyAsset)
 
 	r.Route("/api/chores", func(r chi.Router) {
 		r.Get("/", choresHandler.List)

@@ -34,7 +34,7 @@ func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		if err := json.Unmarshal([]byte(raw), &s); err != nil {
 			s = raw
 		}
-		if (key == "frigate_password" || key == "mqtt_password") && s != "" {
+		if (key == "frigate_password" || key == "mqtt_password" || key == "immich_api_key") && s != "" {
 			s = "********"
 		}
 		settings[key] = s
@@ -57,7 +57,7 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	for key, value := range updates {
-		if (key == "frigate_password" || key == "mqtt_password") && value == "********" {
+		if (key == "frigate_password" || key == "mqtt_password" || key == "immich_api_key") && value == "********" {
 			continue
 		}
 		encoded, _ := json.Marshal(value)

@@ -48,7 +48,8 @@ func (s *Scheduler) Start(ctx context.Context) {
 }
 
 func (s *Scheduler) runCalendarSync(ctx context.Context) {
-	s.calendar.SyncAllSources(ctx)
+	results := s.calendar.SyncAllSources(ctx)
+	s.broadcast("calendar_synced", map[string]any{"status": "complete", "results": results})
 
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
@@ -59,8 +60,8 @@ func (s *Scheduler) runCalendarSync(ctx context.Context) {
 			return
 		case <-ticker.C:
 			log.Println("running scheduled calendar sync...")
-			s.calendar.SyncAllSources(ctx)
-			s.broadcast("calendar_synced", map[string]string{"status": "complete"})
+			results := s.calendar.SyncAllSources(ctx)
+			s.broadcast("calendar_synced", map[string]any{"status": "complete", "results": results})
 		}
 	}
 }
@@ -98,8 +99,12 @@ func (s *Scheduler) generateBriefing(ctx context.Context) {
 	runID := s.batch.StartRun("daily_briefing")
 	log.Println("generating daily AI briefing...")
 
-	today := time.Now()
-	start := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
+	loc, err := time.LoadLocation(s.timezone)
+	if err != nil {
+		loc = time.UTC
+	}
+	today := time.Now().In(loc)
+	start := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, loc)
 	end := start.Add(24 * time.Hour)
 
 	events, _ := s.calendar.GetEvents(start, end)

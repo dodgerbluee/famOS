@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type CalendarSource } from '../../api/client';
+import { useWebSocket } from '../../hooks/useWebSocket';
 import { formatDate, useTimezone } from '../../lib/timezone';
 
 const SOURCE_COLORS = ['#f38ba8', '#89b4fa', '#a6e3a1', '#f9e2af', '#f5c2e7', '#fab387', '#94e2d5', '#cba6f7'];
@@ -8,6 +9,8 @@ export function SourceManager() {
   const [sources, setSources] = useState<CalendarSource[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [syncErrors, setSyncErrors] = useState<Record<string, string>>({});
   const [form, setForm] = useState({
     name: '',
     type: 'ics_url' as 'caldav' | 'ics_url',
@@ -26,6 +29,33 @@ export function SourceManager() {
   };
 
   useEffect(load, []);
+
+  useWebSocket((msg) => {
+    if (msg.type === 'calendar_synced') {
+      setSyncingId(null);
+      load();
+      const payload = msg.payload as { results?: { sourceId: string; error?: string }[] } | undefined;
+      if (payload?.results) {
+        const errors: Record<string, string> = {};
+        for (const r of payload.results) {
+          if (r.error) errors[r.sourceId] = r.error;
+        }
+        setSyncErrors(errors);
+        if (Object.keys(errors).length > 0) {
+          setTimeout(() => setSyncErrors({}), 10000);
+        }
+      }
+    }
+    if (msg.type === 'calendar_sync_error') {
+      setSyncingId(null);
+      load();
+      const payload = msg.payload as { sourceId?: string; error?: string } | undefined;
+      if (payload?.sourceId && payload?.error) {
+        setSyncErrors(prev => ({ ...prev, [payload.sourceId!]: payload.error! }));
+        setTimeout(() => setSyncErrors({}), 10000);
+      }
+    }
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,7 +94,11 @@ export function SourceManager() {
   };
 
   const handleResync = async (id: string) => {
-    await api.post(`/api/calendar/sources/${id}/sync`, {});
+    if (syncingId) return;
+    setSyncingId(id);
+    await api.post(`/api/calendar/sources/${id}/sync`, {}).catch(() => {
+      setSyncingId(null);
+    });
   };
 
   const startEdit = (src: CalendarSource) => {
@@ -220,14 +254,15 @@ export function SourceManager() {
 
       <div className="space-y-2">
         {sources.map((src) => (
-          <div key={src.id} className="flex items-center gap-3 bg-surface-light rounded-xl p-3">
+          <div key={src.id} className="bg-surface-light rounded-xl p-3">
+            <div className="flex items-center gap-3">
             <div className="w-4 h-4 rounded-full" style={{ backgroundColor: src.color }} />
             <div className="flex-1">
               <p className="text-text-bright font-medium">{src.name}</p>
               <p className="text-text-dim text-xs">
                 {src.type === 'caldav' ? 'CalDAV' : 'ICS URL'}
                 {src.calendarName && ` · Calendar: ${src.calendarName}`}
-                {src.lastSyncedAt && ` · Last sync: ${formatDate(src.lastSyncedAt, timezone, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}`}
+                {src.lastSyncedAt && ` · Last sync: ${formatDate(parseSqliteUtc(src.lastSyncedAt), timezone, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}`}
               </p>
             </div>
             <button
@@ -238,9 +273,10 @@ export function SourceManager() {
             </button>
             <button
               onClick={() => handleResync(src.id)}
-              className="text-accent-green text-sm px-3 py-2 min-h-[48px]"
+              disabled={syncingId === src.id}
+              className="text-accent-green text-sm px-3 py-2 min-h-[48px] disabled:opacity-50"
             >
-              Resync
+              {syncingId === src.id ? 'Syncing...' : 'Resync'}
             </button>
             <button
               onClick={() => handleDelete(src.id)}
@@ -248,6 +284,10 @@ export function SourceManager() {
             >
               Remove
             </button>
+            </div>
+            {syncErrors[src.id] && (
+              <p className="text-accent-red text-xs mt-2 pl-7">{syncErrors[src.id]}</p>
+            )}
           </div>
         ))}
         {sources.length === 0 && (
@@ -256,4 +296,11 @@ export function SourceManager() {
       </div>
     </div>
   );
+}
+
+function parseSqliteUtc(value: string) {
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) {
+    return value.replace(' ', 'T') + 'Z';
+  }
+  return value;
 }

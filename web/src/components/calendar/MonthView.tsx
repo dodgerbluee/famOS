@@ -1,6 +1,6 @@
 import type { CalendarEvent } from '../../api/client';
 import { getCalendarEventDateKey } from '../../lib/calendar';
-import { formatDate, formatTime, getDateKey, useTimezone } from '../../lib/timezone';
+import { addMonthsInTimezone, formatDate, formatTime, fromDateKey, getDateKey, getDateParts, useTimezone } from '../../lib/timezone';
 
 interface MonthViewProps {
   date: Date;
@@ -14,18 +14,20 @@ const MAX_VISIBLE_EVENTS = 3;
 
 export function MonthView({ date, events, onDateChange, onDaySelect, onEventSelect }: MonthViewProps) {
   const timezone = useTimezone();
-  const year = date.getFullYear();
-  const month = date.getMonth();
+  const { year, month } = getDateParts(date, timezone);
+  const monthIndex = month - 1;
 
-  const firstDay = new Date(year, month, 1, 12);
-  const lastDay = new Date(year, month + 1, 0, 12);
+  const firstDay = fromDateKey(`${year}-${String(month).padStart(2, '0')}-01`, timezone);
+  const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0, 12));
   const startOffset = firstDay.getDay();
 
   const today = getDateKey(new Date(), timezone);
 
   const days: (Date | null)[] = [];
   for (let i = 0; i < startOffset; i++) days.push(null);
-  for (let d = 1; d <= lastDay.getDate(); d++) days.push(new Date(year, month, d, 12));
+  for (let d = 1; d <= lastDay.getUTCDate(); d++) {
+    days.push(fromDateKey(`${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`, timezone));
+  }
 
   const eventsOnDay = (day: Date) => {
     const dayStr = getDateKey(day, timezone);
@@ -33,11 +35,11 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
   };
 
   const prevMonth = () => {
-    onDateChange?.(new Date(year, month - 1, 1));
+    onDateChange?.(addMonthsInTimezone(date, -1, timezone));
   };
 
   const nextMonth = () => {
-    onDateChange?.(new Date(year, month + 1, 1));
+    onDateChange?.(addMonthsInTimezone(date, 1, timezone));
   };
 
   return (

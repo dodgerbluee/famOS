@@ -1,6 +1,6 @@
 import { EventCard } from './EventCard';
 import type { CalendarEvent } from '../../api/client';
-import { formatDate, getDateKey, useTimezone } from '../../lib/timezone';
+import { addDaysInTimezone, formatDate, getDateKey, useTimezone } from '../../lib/timezone';
 
 interface DayViewProps {
   date: Date;
@@ -17,15 +17,11 @@ export function DayView({ date, events, compact, onDateChange, onEventSelect, re
   const timedEvents = events.filter((e) => !e.allDay);
 
   const prevDay = () => {
-    const d = new Date(date);
-    d.setDate(d.getDate() - 1);
-    onDateChange?.(d);
+    onDateChange?.(addDaysInTimezone(date, -1, timezone));
   };
 
   const nextDay = () => {
-    const d = new Date(date);
-    d.setDate(d.getDate() + 1);
-    onDateChange?.(d);
+    onDateChange?.(addDaysInTimezone(date, 1, timezone));
   };
 
   const isToday = getDateKey(date, timezone) === getDateKey(new Date(), timezone);

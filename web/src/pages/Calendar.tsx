@@ -10,11 +10,18 @@ import { endOfDayInTimezone, endOfMonthInTimezone, endOfWeekInTimezone, startOfD
 
 type ViewMode = 'day' | 'week' | 'month';
 
+interface SyncResult {
+  sourceName: string;
+  eventCount: number;
+  error?: string;
+}
+
 export function Calendar() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [syncing, setSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{ results: SyncResult[]; show: boolean } | null>(null);
   const [adding, setAdding] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [sources, setSources] = useState<CalendarSource[]>([]);
@@ -42,23 +49,35 @@ export function Calendar() {
   }, [currentDate, viewMode, timezone]);
 
   useEffect(loadEvents, [loadEvents]);
-  useEffect(() => {
+  useEffect(() => { loadSources(); }, []);
+
+  const loadSources = () => {
     api.get<CalendarSource[]>('/api/calendar/sources').then(setSources).catch(() => {});
-  }, []);
+  };
 
   useWebSocket((msg) => {
     if (msg.type === 'calendar_synced') {
       loadEvents();
+      loadSources();
+      const payload = msg.payload as { results?: SyncResult[] } | undefined;
+      if (payload?.results) {
+        setSyncing(false);
+        const results = payload.results;
+        setSyncStatus({ results, show: true });
+        setTimeout(() => setSyncStatus(null), 6000);
+      }
     }
   });
 
   const handleSync = async () => {
     setSyncing(true);
+    setSyncStatus(null);
     try {
       await api.post('/api/calendar/sync', {});
-      setTimeout(loadEvents, 2000);
-    } finally {
-      setTimeout(() => setSyncing(false), 3000);
+    } catch {
+      setSyncing(false);
+      setSyncStatus({ results: [{ sourceName: 'All', eventCount: 0, error: 'Failed to start sync' }], show: true });
+      setTimeout(() => setSyncStatus(null), 6000);
     }
   };
 
@@ -91,6 +110,22 @@ export function Calendar() {
           </button>
         </div>
       </div>
+
+      {syncStatus?.show && (
+        <div className="bg-surface rounded-xl p-3 space-y-1 text-sm">
+          {syncStatus.results.map((r, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${r.error ? 'bg-accent-red' : 'bg-accent-green'}`} />
+              <span className="text-text">{r.sourceName}</span>
+              {r.error ? (
+                <span className="text-accent-red ml-auto">{r.error}</span>
+              ) : (
+                <span className="text-text-dim ml-auto">{r.eventCount} events</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {adding && (
         <AddEventForm

@@ -1,7 +1,7 @@
 import { EventCard } from './EventCard';
 import type { CalendarEvent } from '../../api/client';
 import { getCalendarEventDateKey } from '../../lib/calendar';
-import { formatDate, getDateKey, useTimezone } from '../../lib/timezone';
+import { addDaysInTimezone, formatDate, getDateKey, useTimezone } from '../../lib/timezone';
 
 interface WeekViewProps {
   startDate: Date;
@@ -31,15 +31,11 @@ export function WeekView({ startDate, events, onDateChange, onEventSelect, refer
   const visibleDays = days.filter((day) => eventsByDay(day).length > 0);
 
   const prevWeek = () => {
-    const d = new Date(startDate);
-    d.setDate(d.getDate() - 7);
-    onDateChange?.(d);
+    onDateChange?.(addDaysInTimezone(startDate, -7, timezone));
   };
 
   const nextWeek = () => {
-    const d = new Date(startDate);
-    d.setDate(d.getDate() + 7);
-    onDateChange?.(d);
+    onDateChange?.(addDaysInTimezone(startDate, 7, timezone));
   };
 
   return (

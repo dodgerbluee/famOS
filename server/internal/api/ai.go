@@ -10,14 +10,18 @@ import (
 )
 
 type AIHandler struct {
-	engine  *ai.Engine
-	weather *service.WeatherService
-	cal     *service.CalendarService
-	cash    *service.SandersCashService
+	engine   *ai.Engine
+	weather  *service.WeatherService
+	cal      *service.CalendarService
+	cash     *service.SandersCashService
+	location *time.Location
 }
 
-func NewAIHandler(engine *ai.Engine, weather *service.WeatherService, cal *service.CalendarService, cash *service.SandersCashService) *AIHandler {
-	return &AIHandler{engine: engine, weather: weather, cal: cal, cash: cash}
+func NewAIHandler(engine *ai.Engine, weather *service.WeatherService, cal *service.CalendarService, cash *service.SandersCashService, location *time.Location) *AIHandler {
+	if location == nil {
+		location = time.UTC
+	}
+	return &AIHandler{engine: engine, weather: weather, cal: cal, cash: cash, location: location}
 }
 
 func (h *AIHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
@@ -39,8 +43,8 @@ func (h *AIHandler) RegenerateDailyBriefing(w http.ResponseWriter, r *http.Reque
 func (h *AIHandler) generateDailyBriefing(w http.ResponseWriter, r *http.Request, refresh bool) {
 	ctx := r.Context()
 
-	today := time.Now()
-	start := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
+	today := time.Now().In(h.location)
+	start := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, h.location)
 	end := start.Add(24 * time.Hour)
 
 	events, _ := h.cal.GetEvents(start, end)

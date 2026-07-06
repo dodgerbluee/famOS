@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -70,6 +71,7 @@ func (h *CalendarHandler) CreateSource(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		count, err := h.svc.SyncSource(ctx, src.ID)
 		if err != nil {
+			log.Printf("initial sync for source %s failed: %v", src.ID, err)
 			h.hub.Broadcast("calendar_sync_error", map[string]string{"sourceId": src.ID, "error": err.Error()})
 			return
 		}
@@ -128,15 +130,18 @@ func (h *CalendarHandler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 
 func (h *CalendarHandler) SyncSource(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+
+	sourceName := h.svc.GetSourceName(id)
+
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
 		count, err := h.svc.SyncSource(ctx, id)
+		result := service.SyncResult{SourceID: id, SourceName: sourceName, EventCount: count}
 		if err != nil {
-			h.hub.Broadcast("calendar_sync_error", map[string]string{"sourceId": id, "error": err.Error()})
-			return
+			result.Error = err.Error()
 		}
-		h.hub.Broadcast("calendar_synced", map[string]any{"sourceId": id, "eventCount": count})
+		h.hub.Broadcast("calendar_synced", map[string]any{"status": "complete", "results": []service.SyncResult{result}})
 	}()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sync_started"})
 }
@@ -260,8 +265,8 @@ func (h *CalendarHandler) SyncNow(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
-		h.svc.SyncAllSources(ctx)
-		h.hub.Broadcast("calendar_synced", map[string]string{"status": "complete"})
+		results := h.svc.SyncAllSources(ctx)
+		h.hub.Broadcast("calendar_synced", map[string]any{"status": "complete", "results": results})
 	}()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sync_started"})
 }

@@ -293,7 +293,16 @@ export function Home() {
               <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
             </svg>
           </button>
-          <p className="text-text-dim text-lg">{formatTime(now, timezone)}</p>
+          <div className="text-right">
+            <p className="text-text-dim text-lg">
+              {formatTime(now, timezone)}{' '}
+              <span className="text-xs align-middle">
+                {formatDate(now, timezone, { timeZoneName: 'short' }).split(' ').pop()}
+              </span>
+              <span className="text-xs align-middle mx-1.5">·</span>
+              <span className="text-sm align-middle">{formatDate(now, timezone, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+            </p>
+          </div>
           {weather && (
             <button
               onClick={() => navigate('/weather')}

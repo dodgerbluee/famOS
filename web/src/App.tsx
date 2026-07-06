@@ -12,6 +12,7 @@ import { BatchProcesses } from './pages/BatchProcesses';
 import { Chores } from './pages/Chores';
 import { useWebSocket } from './hooks/useWebSocket';
 import { MotionAlertTray } from './components/cameras/MotionAlert';
+import { Screensaver } from './components/Screensaver';
 import type { MotionAlert } from './api/client';
 
 function GlobalMotionAlert() {
@@ -49,6 +50,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <GlobalMotionAlert />
+      <Screensaver />
       <Routes>
         <Route element={<Shell />}>
           <Route path="/" element={<Home />} />

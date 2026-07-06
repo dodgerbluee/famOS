@@ -21,6 +21,12 @@ export function IntegrationSettings() {
   const [seerrApiKey, setSeerrApiKey] = useState('');
   const [vikunjaUrl, setVikunjaUrl] = useState('');
   const [vikunjaApiKey, setVikunjaApiKey] = useState('');
+  const [immichUrl, setImmichUrl] = useState('');
+  const [immichApiKey, setImmichApiKey] = useState('');
+  const [screensaverAlbumId, setScreensaverAlbumId] = useState('');
+  const [screensaverTimeout, setScreensaverTimeout] = useState('300');
+  const [immichTesting, setImmichTesting] = useState(false);
+  const [immichTestResult, setImmichTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -56,6 +62,10 @@ export function IntegrationSettings() {
       setSeerrApiKey(s.seerr_api_key || '');
       setVikunjaUrl(s.vikunja_url || '');
       setVikunjaApiKey(s.vikunja_api_key || '');
+      setImmichUrl(s.immich_url || '');
+      setImmichApiKey(s.immich_api_key || '');
+      setScreensaverAlbumId(s.screensaver_album_id || '');
+      setScreensaverTimeout(s.screensaver_timeout || '300');
     }).catch(() => {});
 
     api.get<Camera[]>('/api/cameras').then(setAvailableCameras).catch(() => {});
@@ -87,6 +97,10 @@ export function IntegrationSettings() {
         seerr_api_key: seerrApiKey,
         vikunja_url: vikunjaUrl,
         vikunja_api_key: vikunjaApiKey,
+        immich_url: immichUrl,
+        immich_api_key: immichApiKey,
+        screensaver_album_id: screensaverAlbumId,
+        screensaver_timeout: screensaverTimeout,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -478,6 +492,74 @@ export function IntegrationSettings() {
             className="w-full bg-surface-lighter text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
+      </div>
+
+      <div className="space-y-4">
+        <h3 className="text-sm font-medium text-primary-light uppercase tracking-wide">Immich Screensaver</h3>
+        <div>
+          <label className="block text-sm text-text-dim mb-1">Immich URL</label>
+          <input
+            type="url"
+            value={immichUrl}
+            onChange={(e) => setImmichUrl(e.target.value)}
+            placeholder="https://immich.example.com"
+            className="w-full bg-surface-lighter text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-text-dim mb-1">API Key</label>
+          <input
+            type="password"
+            value={immichApiKey}
+            onChange={(e) => setImmichApiKey(e.target.value)}
+            placeholder="From Immich > Account Settings > API Keys"
+            className="w-full bg-surface-lighter text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-text-dim mb-1">Album ID</label>
+          <input
+            type="text"
+            value={screensaverAlbumId}
+            onChange={(e) => setScreensaverAlbumId(e.target.value)}
+            placeholder="UUID from Immich album URL"
+            className="w-full bg-surface-lighter text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-text-dim mb-1">Screensaver Timeout (seconds)</label>
+          <input
+            type="number"
+            min={0}
+            value={screensaverTimeout}
+            onChange={(e) => setScreensaverTimeout(e.target.value)}
+            placeholder="300"
+            className="w-full bg-surface-lighter text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+        <button
+          onClick={async () => {
+            setImmichTesting(true);
+            setImmichTestResult(null);
+            try {
+              const result = await api.post<{ ok: boolean; message: string }>('/api/immich/test', {});
+              setImmichTestResult(result);
+            } catch {
+              setImmichTestResult({ ok: false, message: 'Request failed' });
+            } finally {
+              setImmichTesting(false);
+            }
+          }}
+          disabled={immichTesting}
+          className="w-full bg-primary/20 text-primary-light font-medium py-3 rounded-xl min-h-[48px] active:scale-95 transition-transform disabled:opacity-50"
+        >
+          {immichTesting ? 'Testing...' : 'Test Connection'}
+        </button>
+        {immichTestResult && (
+          <p className={`text-sm ${immichTestResult.ok ? 'text-accent-green' : 'text-accent-red'}`}>
+            {immichTestResult.message}
+          </p>
+        )}
       </div>
 
       <div className="space-y-4">

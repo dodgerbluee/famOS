@@ -77,26 +77,6 @@ func (s *CalendarService) ListSources() ([]CalendarSource, error) {
 		}
 		sources = append(sources, src)
 	}
-	for i := range sources {
-		if sources[i].Type != "caldav" || !sources[i].Active {
-			continue
-		}
-		calendars, err := s.client.ListCalendars(context.Background(), sources[i].URL, sources[i].Username, getSourcePassword(s.db, sources[i].ID))
-		if err != nil {
-			continue
-		}
-		for _, calendar := range calendars {
-			if (sources[i].CalendarName != "" && calendar.Name == sources[i].CalendarName) || strings.TrimRight(calendar.Path, "/") == strings.TrimRight(sources[i].URL, "/") {
-				if calendar.Color != "" {
-					sources[i].Color = calendar.Color
-				}
-				if calendar.Name != "" {
-					sources[i].CalendarName = calendar.Name
-				}
-				break
-			}
-		}
-	}
 	return sources, nil
 }
 
@@ -265,7 +245,9 @@ func (s *CalendarService) SyncSource(ctx context.Context, sourceID string) (int,
 		count++
 	}
 
-	s.db.Exec(`UPDATE calendar_sources SET last_synced_at = CURRENT_TIMESTAMP WHERE id = ?`, sourceID)
+	if _, err := s.db.Exec(`UPDATE calendar_sources SET last_synced_at = CURRENT_TIMESTAMP WHERE id = ?`, sourceID); err != nil {
+		log.Printf("failed to update last_synced_at for source %s: %v", sourceID, err)
+	}
 	return count, nil
 }
 
@@ -378,22 +360,40 @@ func (s *CalendarService) DeleteEvent(id string) error {
 	return err
 }
 
-func (s *CalendarService) SyncAllSources(ctx context.Context) {
+func (s *CalendarService) GetSourceName(id string) string {
+	var name string
+	_ = s.db.QueryRow(`SELECT name FROM calendar_sources WHERE id = ?`, id).Scan(&name)
+	return name
+}
+
+type SyncResult struct {
+	SourceID   string `json:"sourceId"`
+	SourceName string `json:"sourceName"`
+	EventCount int    `json:"eventCount"`
+	Error      string `json:"error,omitempty"`
+}
+
+func (s *CalendarService) SyncAllSources(ctx context.Context) []SyncResult {
 	sources, err := s.ListSources()
 	if err != nil {
 		log.Printf("list sources for sync: %v", err)
-		return
+		return nil
 	}
 
+	var results []SyncResult
 	for _, src := range sources {
 		if !src.Active {
 			continue
 		}
 		count, err := s.SyncSource(ctx, src.ID)
+		r := SyncResult{SourceID: src.ID, SourceName: src.Name, EventCount: count}
 		if err != nil {
 			log.Printf("sync source %s (%s): %v", src.Name, src.ID, err)
-			continue
+			r.Error = err.Error()
+		} else {
+			log.Printf("synced %d events from %s", count, src.Name)
 		}
-		log.Printf("synced %d events from %s", count, src.Name)
+		results = append(results, r)
 	}
+	return results
 }
