@@ -51,7 +51,6 @@ export function DailyBriefingCard({ compact }: DailyBriefingCardProps) {
   if (compact) {
     return (
       <div>
-        <h2 className="text-lg font-semibold text-text-bright mb-2">AI Briefing</h2>
         {briefing ? (
           <div>
             <p className="text-text-bright text-sm">{briefing.summary}</p>

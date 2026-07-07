@@ -45,7 +45,7 @@ func main() {
 	defer cancel()
 
 	batchSvc := service.NewBatchService(database)
-	scheduler := background.NewScheduler(svc.Calendar, svc.Weather, svc.Cash, svc.AI, batchSvc, hub.Broadcast, cfg.Timezone)
+	scheduler := background.NewScheduler(svc.Calendar, svc.Weather, svc.Cash, svc.AI, batchSvc, database, hub.Broadcast, cfg.Timezone)
 
 	router := api.NewRouter(database, cfg, svc, hub, batchSvc, scheduler)
 

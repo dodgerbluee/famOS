@@ -12,27 +12,25 @@ export function Leaderboard({ accounts, compact, onSelect }: BalanceListProps) {
       {accounts.map((account) => (
         <div
           key={account.memberId}
-          className={`flex items-center gap-3 bg-surface-light rounded-xl cursor-pointer active:scale-[0.98] transition-transform ${
-            compact ? 'p-2' : 'p-4'
+          className={`flex items-center bg-surface-light rounded-xl cursor-pointer active:scale-[0.98] transition-transform ${
+            compact ? 'gap-2 p-1.5' : 'gap-3 p-4'
           }`}
           onClick={() => onSelect?.(account.memberId)}
         >
           <div
-            className={`rounded-full flex items-center justify-center font-bold text-bg ${
-              compact ? 'w-10 h-10 text-lg' : 'w-14 h-14 text-2xl'
+            className={`rounded-full flex items-center justify-center font-bold text-bg shrink-0 ${
+              compact ? 'w-8 h-8 text-base' : 'w-14 h-14 text-2xl'
             }`}
             style={{ backgroundColor: account.memberColor }}
           >
             {account.memberName[0]}
           </div>
 
-          <div className="flex-1">
-            <p className={`text-text-bright font-semibold ${compact ? 'text-sm' : 'text-lg'}`}>
-              {account.memberName}
-            </p>
-          </div>
+          <p className={`text-text-bright font-semibold truncate min-w-0 ${compact ? 'text-sm' : 'text-lg flex-1'}`}>
+            {account.memberName}
+          </p>
 
-          <div className={`font-bold text-accent-green ${compact ? 'text-lg' : 'text-2xl'}`}>
+          <div className={`font-bold text-accent-green shrink-0 ${compact ? 'text-base ml-auto' : 'text-2xl'}`}>
             ${(account.balance / 100).toFixed(2)}
           </div>
         </div>

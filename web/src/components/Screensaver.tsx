@@ -14,19 +14,20 @@ export function Screensaver() {
   const [timeoutSec, setTimeoutSec] = useState(0);
   const { isIdle, resetIdle } = useIdleTimeout(timeoutSec);
   const [photos, setPhotos] = useState<ImmichAsset[]>([]);
-  const [currentPhoto, setCurrentPhoto] = useState<ImmichAsset | null>(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [clock, setClock] = useState('');
   const [clockDate, setClockDate] = useState('');
+  const [showInfo, setShowInfo] = useState(false);
   const rotateRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const lastShownRef = useRef<string | null>(null);
-  const queueRef = useRef<ImmichAsset[]>([]);
   const photosRef = useRef<ImmichAsset[]>([]);
-  const currentPhotoRef = useRef<ImmichAsset | null>(null);
+  const currentIndexRef = useRef(0);
   const inflightRef = useRef(false);
+  const gestureStartRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
-    currentPhotoRef.current = currentPhoto;
-  }, [currentPhoto]);
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
 
   useEffect(() => {
     api.get<Record<string, string>>('/api/settings').then((settings) => {
@@ -48,10 +49,8 @@ export function Screensaver() {
         const shuffled = shuffleAvoidingRepeat(assets, lastShownRef.current);
         setPhotos(shuffled);
         photosRef.current = shuffled;
-        queueRef.current = shuffled.slice(1);
-        const first = shuffled[0] ?? null;
-        setCurrentPhoto(first);
-        lastShownRef.current = first?.id ?? null;
+        setCurrentIndex(0);
+        lastShownRef.current = shuffled[0]?.id ?? null;
       }).catch(() => setPhotos([]));
     }
 
@@ -66,41 +65,15 @@ export function Screensaver() {
     return () => clearInterval(clockInterval);
   }, [isIdle, photos.length]);
 
-  useEffect(() => {
-    if (!isIdle || photos.length === 0 || !currentPhotoRef.current) return;
-
+  const scheduleNext = () => {
     if (rotateRef.current) clearTimeout(rotateRef.current);
+    rotateRef.current = setTimeout(() => {
+      void goNext();
+    }, DISPLAY_INTERVAL);
+  };
 
-    const scheduleNext = () => {
-      rotateRef.current = setTimeout(advanceSlide, DISPLAY_INTERVAL);
-    };
-
-    const advanceSlide = async () => {
-      if (inflightRef.current) return;
-      inflightRef.current = true;
-
-      const current = currentPhotoRef.current;
-      const next = nextPhotoFromQueue(queueRef.current, photosRef.current, current?.id ?? null, lastShownRef.current);
-      if (!next || next.id === current?.id) {
-        inflightRef.current = false;
-        scheduleNext();
-        return;
-      }
-
-      try {
-        await preloadImage(`/api/immich/assets/${next.id}`);
-      } catch {
-        inflightRef.current = false;
-        scheduleNext();
-        return;
-      }
-
-      setCurrentPhoto(next);
-      lastShownRef.current = next.id;
-      queueRef.current = consumeQueue(queueRef.current, next.id, photosRef.current, lastShownRef.current);
-      inflightRef.current = false;
-      scheduleNext();
-    };
+  useEffect(() => {
+    if (!isIdle || photos.length === 0) return;
 
     scheduleNext();
 
@@ -110,27 +83,144 @@ export function Screensaver() {
     };
   }, [isIdle, photos.length]);
 
+  const goNext = async () => {
+    if (inflightRef.current || photosRef.current.length === 0) return;
+    inflightRef.current = true;
+
+    const activePhotos = photosRef.current;
+    const current = activePhotos[currentIndexRef.current];
+    let nextPhotos = activePhotos;
+    let nextIndex = currentIndexRef.current + 1;
+
+    if (nextIndex >= activePhotos.length) {
+      nextPhotos = shuffleAvoidingRepeat(activePhotos, current?.id ?? null);
+      photosRef.current = nextPhotos;
+      setPhotos(nextPhotos);
+      nextIndex = 0;
+    }
+
+    const next = nextPhotos[nextIndex];
+    if (!next || next.id === current?.id) {
+      inflightRef.current = false;
+      scheduleNext();
+      return;
+    }
+
+    try {
+      await preloadImage(`/api/immich/assets/${next.id}`);
+    } catch {
+      inflightRef.current = false;
+      scheduleNext();
+      return;
+    }
+
+    setCurrentIndex(nextIndex);
+    lastShownRef.current = next.id;
+    inflightRef.current = false;
+    scheduleNext();
+  };
+
+  const goPrevious = async () => {
+    if (inflightRef.current || photosRef.current.length === 0) return;
+    const prevIndex = currentIndexRef.current > 0 ? currentIndexRef.current - 1 : photosRef.current.length - 1;
+    const prev = photosRef.current[prevIndex];
+    if (!prev) return;
+    try {
+      await preloadImage(`/api/immich/assets/${prev.id}`);
+    } catch {
+      return;
+    }
+    setCurrentIndex(prevIndex);
+    lastShownRef.current = prev.id;
+    scheduleNext();
+  };
+
   if (!isIdle || timeoutSec <= 0) return null;
 
+  const currentPhoto = photos[currentIndex] ?? null;
   const imgA = currentPhoto ? `/api/immich/assets/${currentPhoto.id}` : '';
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    gestureStartRef.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const start = gestureStartRef.current;
+    gestureStartRef.current = null;
+    if (!start) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (Math.abs(dy) > Math.abs(dx) && dy < -80) {
+      resetIdle();
+      return;
+    }
+  };
 
   return (
     <div
       className="fixed inset-0 z-[9999] bg-black"
-      onPointerDown={resetIdle}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
       onKeyDown={resetIdle}
     >
       {photos.length > 0 ? (
-        <img
-          src={imgA}
-          className="absolute inset-0 w-full h-full object-contain"
-          alt=""
-        />
+        <button
+          type="button"
+          onDoubleClick={resetIdle}
+          className="absolute inset-0 block h-full w-full cursor-default bg-transparent"
+          aria-label="Double-click to wake screensaver"
+        >
+          <img
+            src={imgA}
+            className="absolute inset-0 w-full h-full object-contain"
+            alt=""
+          />
+        </button>
       ) : null}
 
       <div className="absolute bottom-8 left-8 text-white/80">
-        <div className="text-5xl font-light">{clock}</div>
-        <div className="text-lg font-light text-white/50 mt-1">{clockDate}</div>
+        <div className="text-[6rem] leading-none font-light">{clock}</div>
+        <div className="text-3xl font-light text-white/50 mt-2">{clockDate}</div>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => { void goPrevious(); }}
+        className="absolute left-6 top-1/2 -translate-y-1/2 rounded-full bg-black/40 px-4 py-3 text-3xl text-white/75 transition hover:bg-black/55 hover:text-white"
+      >
+        ‹
+      </button>
+      <button
+        type="button"
+        onClick={() => { void goNext(); }}
+        className="absolute right-6 top-1/2 -translate-y-1/2 rounded-full bg-black/40 px-4 py-3 text-3xl text-white/75 transition hover:bg-black/55 hover:text-white"
+      >
+        ›
+      </button>
+
+      {/* Info button + photo date */}
+      <div className="absolute bottom-8 right-8 flex items-center gap-3">
+        {showInfo && currentPhoto?.createdAt && (
+          <div className="bg-black/50 backdrop-blur-sm rounded-xl px-4 py-2 text-white/80 text-sm">
+            {new Date(currentPhoto.createdAt).toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            <span className="text-white/50 ml-2">
+              {new Date(currentPhoto.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+            </span>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setShowInfo((v) => !v)}
+          className={`w-10 h-10 flex items-center justify-center rounded-full transition ${
+            showInfo ? 'bg-white/20 text-white' : 'bg-black/40 text-white/60 hover:bg-black/55 hover:text-white/80'
+          }`}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+        </button>
       </div>
     </div>
   );
@@ -145,21 +235,6 @@ function shuffleAvoidingRepeat(arr: ImmichAsset[], lastShownId: string | null) {
   }
 
   return shuffled;
-}
-
-function nextPhotoFromQueue(queue: ImmichAsset[], allPhotos: ImmichAsset[], currentId: string | null, lastShownId: string | null) {
-  if (queue.length === 0) {
-    queue.push(...shuffleAvoidingRepeat(allPhotos, lastShownId).filter((photo) => photo.id !== currentId));
-  }
-  return queue[0] ?? allPhotos.find((photo) => photo.id !== currentId) ?? null;
-}
-
-function consumeQueue(queue: ImmichAsset[], consumedId: string, allPhotos: ImmichAsset[], lastShownId: string | null) {
-  let nextQueue = queue.filter((photo) => photo.id !== consumedId);
-  if (nextQueue.length === 0) {
-    nextQueue = shuffleAvoidingRepeat(allPhotos, lastShownId).filter((photo) => photo.id !== consumedId);
-  }
-  return nextQueue;
 }
 
 async function preloadImage(src: string) {
@@ -196,13 +271,12 @@ function interleaveTimeBuckets(arr: ImmichAsset[]) {
     buckets.set(key, items);
   }
 
-  const groups = shuffleArray(Array.from(buckets.values()).map(shuffleArray));
+  const shuffledGroups = shuffleArray(Array.from(buckets.values()).map(shuffleArray));
   const result: ImmichAsset[] = [];
   let added = true;
-
   while (added) {
     added = false;
-    for (const group of groups) {
+    for (const group of shuffledGroups) {
       const next = group.shift();
       if (next) {
         result.push(next);
@@ -210,7 +284,6 @@ function interleaveTimeBuckets(arr: ImmichAsset[]) {
       }
     }
   }
-
   return result;
 }
 

@@ -39,20 +39,21 @@ type CalendarSource struct {
 }
 
 type CalendarEvent struct {
-	ID                 string `json:"id"`
-	SourceID           string `json:"sourceId"`
-	ExternalID         string `json:"externalId"`
-	Title              string `json:"title"`
-	Description        string `json:"description"`
-	Location           string `json:"location"`
-	StartAt            string `json:"startAt"`
-	EndAt              string `json:"endAt"`
-	AllDay             bool   `json:"allDay"`
-	RecurrenceRule     string `json:"recurrenceRule"`
-	AIEnrichment       string `json:"aiEnrichment"`
-	SourceColor        string `json:"sourceColor"`
-	SourceName         string `json:"sourceName"`
-	SourceCalendarName string `json:"sourceCalendarName"`
+	ID                  string `json:"id"`
+	SourceID            string `json:"sourceId"`
+	ExternalID          string `json:"externalId"`
+	Title               string `json:"title"`
+	Description         string `json:"description"`
+	Location            string `json:"location"`
+	StartAt             string `json:"startAt"`
+	EndAt               string `json:"endAt"`
+	AllDay              bool   `json:"allDay"`
+	RecurrenceRule      string `json:"recurrenceRule"`
+	AIEnrichment        string `json:"aiEnrichment"`
+	SourceColor         string `json:"sourceColor"`
+	SourceName          string `json:"sourceName"`
+	SourceCalendarName  string `json:"sourceCalendarName"`
+	SourceCalendarColor string `json:"sourceCalendarColor"`
 }
 
 type RemoteCalendar = caldav.RemoteCalendar
@@ -202,7 +203,9 @@ func (s *CalendarService) GetEvents(start, end time.Time) ([]CalendarEvent, erro
 	rows, err := s.db.Query(`
 		SELECT e.id, e.source_id, e.external_id, e.title, e.description, e.location,
 		       e.start_at, e.end_at, e.all_day, e.recurrence_rule, e.ai_enrichment,
-		       COALESCE(NULLIF(e.calendar_color, ''), cs.color), cs.name, COALESCE(NULLIF(e.calendar_name, ''), cs.calendar_name)
+		       cs.color, cs.name,
+		       COALESCE(NULLIF(e.calendar_name, ''), cs.calendar_name),
+		       COALESCE(NULLIF(e.calendar_color, ''), cs.color)
 		FROM calendar_events e
 		JOIN calendar_sources cs ON cs.id = e.source_id
 		WHERE e.start_at <= ? AND e.end_at >= ?
@@ -218,7 +221,7 @@ func (s *CalendarService) GetEvents(start, end time.Time) ([]CalendarEvent, erro
 		var ev CalendarEvent
 		if err := rows.Scan(&ev.ID, &ev.SourceID, &ev.ExternalID, &ev.Title, &ev.Description,
 			&ev.Location, &ev.StartAt, &ev.EndAt, &ev.AllDay, &ev.RecurrenceRule,
-			&ev.AIEnrichment, &ev.SourceColor, &ev.SourceName, &ev.SourceCalendarName); err != nil {
+			&ev.AIEnrichment, &ev.SourceColor, &ev.SourceName, &ev.SourceCalendarName, &ev.SourceCalendarColor); err != nil {
 			return nil, err
 		}
 		events = append(events, ev)
@@ -348,14 +351,16 @@ func (s *CalendarService) CreateEvent(ctx context.Context, sourceID, calendarNam
 	err = s.db.QueryRow(`
 		SELECT e.id, e.source_id, e.external_id, e.title, e.description, e.location,
 		       e.start_at, e.end_at, e.all_day, e.recurrence_rule, e.ai_enrichment,
-		       COALESCE(NULLIF(e.calendar_color, ''), cs.color), cs.name, COALESCE(NULLIF(e.calendar_name, ''), cs.calendar_name)
+		       cs.color, cs.name,
+		       COALESCE(NULLIF(e.calendar_name, ''), cs.calendar_name),
+		       COALESCE(NULLIF(e.calendar_color, ''), cs.color)
 		FROM calendar_events e
 		JOIN calendar_sources cs ON cs.id = e.source_id
 		WHERE e.source_id = ? AND e.external_id = ?
 	`, sourceID, parsed.UID).Scan(
 		&ev.ID, &ev.SourceID, &ev.ExternalID, &ev.Title, &ev.Description, &ev.Location,
 		&ev.StartAt, &ev.EndAt, &ev.AllDay, &ev.RecurrenceRule, &ev.AIEnrichment,
-		&ev.SourceColor, &ev.SourceName, &ev.SourceCalendarName,
+		&ev.SourceColor, &ev.SourceName, &ev.SourceCalendarName, &ev.SourceCalendarColor,
 	)
 	if err != nil {
 		return nil, err

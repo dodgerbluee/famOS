@@ -19,6 +19,7 @@ export function useIdleTimeout(timeoutSeconds: number) {
 
     let throttleTimer: ReturnType<typeof setTimeout> | null = null;
     const onActivity = () => {
+      if (isIdle) return;
       if (throttleTimer) return;
       throttleTimer = setTimeout(() => { throttleTimer = null; }, 500);
       lastActivityRef.current = Date.now();
@@ -35,7 +36,7 @@ export function useIdleTimeout(timeoutSeconds: number) {
       if (timerRef.current) clearTimeout(timerRef.current);
       if (throttleTimer) clearTimeout(throttleTimer);
     };
-  }, [timeoutSeconds]);
+  }, [timeoutSeconds, isIdle]);
 
   return { isIdle, resetIdle };
 }

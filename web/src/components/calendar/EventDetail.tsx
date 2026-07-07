@@ -1,4 +1,5 @@
 import type { CalendarEvent } from '../../api/client';
+import { colorWithAlpha, formatCalendarLabel } from '../../lib/calendarDisplay';
 import { formatCalendarEventDate } from '../../lib/calendar';
 import { formatTime, useTimezone } from '../../lib/timezone';
 
@@ -60,18 +61,28 @@ export function EventDetail({ event, onClose }: EventDetailProps) {
 
         {event.sourceName && (
           <div className="space-y-1">
-            <span
-              className="inline-block text-xs px-2 py-0.5 rounded-full"
-              style={{
-                backgroundColor: `${event.sourceColor || '#6366f1'}22`,
-                color: event.sourceColor || '#6366f1',
-              }}
-            >
-              {event.sourceName}
-            </span>
+            <div className="flex flex-wrap gap-2">
+              <span
+                className="inline-block text-xs px-2 py-0.5 rounded-full"
+                style={{
+                  backgroundColor: colorWithAlpha(event.sourceColor || '#6366f1'),
+                  color: event.sourceColor || '#6366f1',
+                }}
+              >
+                {formatCalendarLabel(event.sourceName)}
+              </span>
             {event.sourceCalendarName && (
-              <p className="text-text-dim text-sm">Calendar: {event.sourceCalendarName}</p>
+                <span
+                  className="inline-block text-xs px-2 py-0.5 rounded-full"
+                  style={{
+                    backgroundColor: colorWithAlpha(event.sourceCalendarColor || event.sourceColor || '#6366f1'),
+                    color: event.sourceCalendarColor || event.sourceColor || '#6366f1',
+                  }}
+                >
+                  {formatCalendarLabel(event.sourceCalendarName)}
+                </span>
             )}
+            </div>
           </div>
         )}
       </div>

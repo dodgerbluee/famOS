@@ -34,7 +34,7 @@ export function MotionAlertTray({ alerts, onDismiss, onDismissAll, onViewCamera,
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 16, opacity: 0 }}
           transition={{ type: 'spring', damping: 25 }}
-          className="fixed bottom-4 right-4 z-50 max-w-[calc(100vw-2rem)]"
+          className="fixed bottom-24 right-4 z-[10001] max-w-[calc(100vw-2rem)]"
         >
           {alerts.length > 1 && (
             <div className="flex items-center justify-between mb-2 px-1">

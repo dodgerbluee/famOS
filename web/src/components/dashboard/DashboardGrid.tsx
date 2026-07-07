@@ -22,18 +22,19 @@ export function DashboardGrid({ layout, editing, children, containerRef }: Dashb
   }, [containerRef]);
 
   const maxRow = computeMaxRow(layout.cards);
-  const rows = layout.mode === 'fill' ? layout.totalRows : Math.max(maxRow, 1);
+  const fillRows = Math.max(maxRow, layout.totalRows);
+  const rows = layout.mode === 'fill' ? fillRows : Math.max(maxRow, 1);
 
   const gridStyle: React.CSSProperties = {
     display: 'grid',
     gridTemplateColumns: `repeat(${GRID_COLS}, 1fr)`,
     gridTemplateRows:
       layout.mode === 'fill'
-        ? `repeat(${layout.totalRows}, 1fr)`
+        ? `repeat(${fillRows}, 1fr)`
         : `repeat(${rows}, ${SCROLL_ROW_HEIGHT}px)`,
     gap: `${GRID_GAP}px`,
     position: 'relative',
-    minHeight: layout.mode === 'fill' ? '100%' : undefined,
+    height: layout.mode === 'fill' ? '100%' : undefined,
   };
 
   return (

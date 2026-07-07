@@ -22,3 +22,12 @@ func (h *VikunjaHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, status)
 }
+
+func (h *VikunjaHandler) GetProjects(w http.ResponseWriter, r *http.Request) {
+	projects, err := h.svc.GetProjects(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, projects)
+}

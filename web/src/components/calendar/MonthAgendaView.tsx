@@ -1,6 +1,6 @@
 import { EventCard } from './EventCard';
 import type { CalendarEvent } from '../../api/client';
-import { getCalendarEventDateKey, getEventVisualState } from '../../lib/calendar';
+import { eventSpansDate, getCalendarEventDateKey, getEventVisualState, isMultiDayEvent } from '../../lib/calendar';
 import { useEffect, useRef } from 'react';
 import { formatDate, fromDateKey, getDateKey, getDateParts, useTimezone } from '../../lib/timezone';
 
@@ -22,10 +22,20 @@ export function MonthAgendaView({ date, events, onDaySelect, onEventSelect, refe
   const today = getDateKey(new Date(), timezone);
 
   const days = Array.from({ length: lastDay.getUTCDate() }, (_, index) => fromDateKey(`${year}-${String(month).padStart(2, '0')}-${String(index + 1).padStart(2, '0')}`, timezone));
+  const dayKeys = days.map((d) => getDateKey(d, timezone));
 
   const eventsByDay = (day: Date) => {
     const dayStr = getDateKey(day, timezone);
-    return events.filter((ev) => getCalendarEventDateKey(ev, timezone) === dayStr);
+    return events.filter((ev) => {
+      if (!eventSpansDate(ev, dayStr, timezone)) return false;
+      if (isMultiDayEvent(ev, timezone)) {
+        const evStartKey = getCalendarEventDateKey(ev, timezone);
+        if (evStartKey === dayStr) return true;
+        if (evStartKey < dayKeys[0]) return dayStr === dayKeys[0];
+        return false;
+      }
+      return true;
+    });
   };
 
   const visibleDays = days.filter((day) => eventsByDay(day).length > 0);
@@ -38,13 +48,15 @@ export function MonthAgendaView({ date, events, onDaySelect, onEventSelect, refe
     });
     const index = targetIndex >= 0 ? targetIndex : 0;
     const target = dayRefs.current[index];
-    if (target) {
-      containerRef.current.scrollTop = Math.max(0, target.offsetTop - 8);
+    if (target && containerRef.current) {
+      const containerTop = containerRef.current.getBoundingClientRect().top;
+      const targetTop = target.getBoundingClientRect().top;
+      containerRef.current.scrollTop += targetTop - containerTop;
     }
   }, [autoScrollRelevant, referenceTime, visibleDays]);
 
   return (
-    <div ref={containerRef} className="space-y-3 overflow-y-auto max-h-[22rem] pr-1">
+    <div ref={containerRef} className="space-y-2 overflow-y-auto flex-1 min-h-0 pr-1">
       {visibleDays.map((day, index) => {
         const dayEvents = eventsByDay(day);
         const isToday = getDateKey(day, timezone) === today;
@@ -53,10 +65,10 @@ export function MonthAgendaView({ date, events, onDaySelect, onEventSelect, refe
           <div
             ref={(el) => { dayRefs.current[index] = el; }}
             key={day.toISOString()}
-            className={`rounded-xl p-3 ${isToday ? 'bg-primary/10 ring-1 ring-primary/30' : 'bg-surface-light'}`}
+            className={`rounded-lg p-2 ${isToday ? 'bg-primary/10 ring-1 ring-primary/30' : 'bg-surface-light'}`}
             onClick={() => onDaySelect?.(day)}
           >
-            <p className={`text-sm font-medium mb-2 ${isToday ? 'text-primary-light' : 'text-text-dim'}`}>
+            <p className={`text-xs font-medium mb-1 ${isToday ? 'text-primary-light' : 'text-text-dim'}`}>
               {formatDate(day, timezone, { weekday: 'short', month: 'short', day: 'numeric' })}
               {isToday && ' · Today'}
             </p>

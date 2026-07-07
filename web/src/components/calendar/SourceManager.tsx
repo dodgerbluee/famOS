@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type CalendarSource } from '../../api/client';
+import { formatCalendarLabel } from '../../lib/calendarDisplay';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { formatDate, useTimezone } from '../../lib/timezone';
 
@@ -267,7 +268,7 @@ export function SourceManager() {
               <p className="text-text-bright font-medium">{src.name}</p>
               <p className="text-text-dim text-xs">
                 {src.type === 'caldav' ? 'CalDAV' : src.type === 'google_calendar' ? 'Google Calendar' : 'ICS URL'}
-                {src.calendarName && ` · Calendar: ${src.calendarName}`}
+                {src.calendarName && ` · Calendar: ${formatCalendarLabel(src.calendarName)}`}
                 {src.lastSyncedAt && ` · Last sync: ${formatDate(parseSqliteUtc(src.lastSyncedAt), timezone, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}`}
               </p>
             </div>

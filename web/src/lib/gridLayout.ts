@@ -13,12 +13,12 @@ export interface DashboardLayout {
   version: number;
 }
 
-const GRID_GRANULARITY = 2;
+const GRID_GRANULARITY = 4;
 
 export const GRID_COLS = 6 * GRID_GRANULARITY;
 export const DEFAULT_TOTAL_ROWS = 5 * GRID_GRANULARITY;
 export const GRID_GAP = 16;
-export const SCROLL_ROW_HEIGHT = 90;
+export const SCROLL_ROW_HEIGHT = 45;
 
 export const CARD_MIN_SIZES: Record<string, { minCol: number; minRow: number }> = {
   briefing: { minCol: 1, minRow: 1 },
@@ -34,20 +34,20 @@ export const CARD_MIN_SIZES: Record<string, { minCol: number; minRow: number }> 
 };
 
 export const DEFAULT_GRID_LAYOUT: DashboardLayout = {
-  mode: 'scroll',
+  mode: 'fill',
   totalRows: DEFAULT_TOTAL_ROWS,
   version: GRID_GRANULARITY,
   cards: [
-    { id: 'briefing', col: 1, row: 1, colSpan: 12, rowSpan: 2 },
-    { id: 'day-calendar', col: 1, row: 3, colSpan: 4, rowSpan: 4 },
-    { id: 'week-calendar', col: 5, row: 3, colSpan: 4, rowSpan: 4 },
-    { id: 'month-calendar', col: 9, row: 3, colSpan: 4, rowSpan: 4 },
-    { id: 'chores', col: 1, row: 7, colSpan: 4, rowSpan: 4 },
-    { id: 'tasks', col: 5, row: 7, colSpan: 4, rowSpan: 2 },
-    { id: 'sanders-cash', col: 9, row: 7, colSpan: 4, rowSpan: 4 },
-    { id: 'services', col: 5, row: 9, colSpan: 2, rowSpan: 2 },
-    { id: 'media', col: 7, row: 9, colSpan: 2, rowSpan: 2 },
-    { id: 'weather', col: 1, row: 11, colSpan: 12, rowSpan: 2 },
+    { id: 'briefing', col: 1, row: 1, colSpan: 24, rowSpan: 4 },
+    { id: 'day-calendar', col: 1, row: 5, colSpan: 8, rowSpan: 8 },
+    { id: 'week-calendar', col: 9, row: 5, colSpan: 8, rowSpan: 8 },
+    { id: 'month-calendar', col: 17, row: 5, colSpan: 8, rowSpan: 8 },
+    { id: 'chores', col: 1, row: 13, colSpan: 8, rowSpan: 8 },
+    { id: 'tasks', col: 9, row: 13, colSpan: 8, rowSpan: 4 },
+    { id: 'sanders-cash', col: 17, row: 13, colSpan: 8, rowSpan: 8 },
+    { id: 'services', col: 9, row: 17, colSpan: 4, rowSpan: 4 },
+    { id: 'media', col: 13, row: 17, colSpan: 4, rowSpan: 4 },
+    { id: 'weather', col: 1, row: 21, colSpan: 24, rowSpan: 4 },
   ],
 };
 
@@ -72,6 +72,9 @@ export function migrateLayout(raw: unknown): DashboardLayout | null {
   if ('cards' in obj && Array.isArray(obj.cards)) {
     const layout = obj as unknown as DashboardLayout;
     if (layout.version === GRID_GRANULARITY) {
+      if (layout.cards.some((c) => c.colSpan <= 0 || c.rowSpan <= 0 || c.col < 1 || c.row < 1 || c.col + c.colSpan - 1 > GRID_COLS)) {
+        return null;
+      }
       return layout;
     }
     return scaleLegacyLayout(layout);
@@ -81,11 +84,11 @@ export function migrateLayout(raw: unknown): DashboardLayout | null {
 }
 
 const DEFAULT_ROW_SPANS: Record<string, number> = {
-  'day-calendar': 4,
-  'week-calendar': 4,
-  'month-calendar': 4,
-  chores: 4,
-  'sanders-cash': 4,
+  'day-calendar': 8,
+  'week-calendar': 8,
+  'month-calendar': 8,
+  chores: 8,
+  'sanders-cash': 8,
 };
 
 function migrateOldFormat(old: OldCardConfig[]): DashboardLayout {
@@ -118,16 +121,18 @@ function migrateOldFormat(old: OldCardConfig[]): DashboardLayout {
 }
 
 function scaleLegacyLayout(layout: DashboardLayout): DashboardLayout {
+  const oldVersion = layout.version || 1;
+  const scale = GRID_GRANULARITY / oldVersion;
   return {
     cards: layout.cards.map((card) => ({
       ...card,
-      col: card.col * GRID_GRANULARITY - (GRID_GRANULARITY - 1),
-      row: card.row * GRID_GRANULARITY - (GRID_GRANULARITY - 1),
-      colSpan: card.colSpan * GRID_GRANULARITY,
-      rowSpan: card.rowSpan * GRID_GRANULARITY,
+      col: (card.col - 1) * scale + 1,
+      row: (card.row - 1) * scale + 1,
+      colSpan: card.colSpan * scale,
+      rowSpan: card.rowSpan * scale,
     })),
     mode: layout.mode || 'scroll',
-    totalRows: (layout.totalRows || 5) * GRID_GRANULARITY,
+    totalRows: (layout.totalRows || 5 * oldVersion) * scale,
     version: GRID_GRANULARITY,
   };
 }

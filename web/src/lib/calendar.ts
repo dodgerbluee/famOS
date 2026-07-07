@@ -1,5 +1,5 @@
 import type { CalendarEvent } from '../api/client';
-import { formatDate, getDateKey } from './timezone';
+import { formatDate, fromDateKey, getDateKey } from './timezone';
 
 export type EventVisualState = 'normal' | 'muted' | 'highlight';
 
@@ -25,6 +25,34 @@ export function getCalendarEventDateKey(event: CalendarEvent, timezone: string) 
 		return event.startAt.split('T')[0];
 	}
 	return getDateKey(event.startAt, timezone);
+}
+
+export function eventSpansDate(event: CalendarEvent, dateKey: string, timezone: string): boolean {
+  const startKey = getCalendarEventDateKey(event, timezone);
+  if (startKey === dateKey) return true;
+
+  const endKey = event.allDay
+    ? event.endAt.split('T')[0]
+    : getDateKey(event.endAt, timezone);
+  if (startKey === endKey) return false;
+
+  const dayStart = fromDateKey(dateKey, timezone, 0).getTime();
+  const evStart = new Date(event.startAt).getTime();
+  const evEnd = new Date(event.endAt).getTime();
+  return evStart < dayStart + 86400000 && evEnd > dayStart;
+}
+
+export function isMultiDayEvent(event: CalendarEvent, timezone: string): boolean {
+  // All-day events that start and end on the same day should be treated as single-day events
+  if (event.allDay) {
+    const startKey = event.startAt.split('T')[0];
+    const endKey = event.endAt.split('T')[0];
+    return startKey !== endKey;
+  }
+
+  const startKey = getDateKey(event.startAt, timezone);
+  const endKey = getDateKey(event.endAt, timezone);
+  return startKey !== endKey;
 }
 
 export function formatCalendarEventDate(event: CalendarEvent, timezone: string, options: Intl.DateTimeFormatOptions) {

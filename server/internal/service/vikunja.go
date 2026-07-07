@@ -56,6 +56,18 @@ func (s *VikunjaService) config() (string, string) {
 	return strings.TrimRight(url, "/"), key
 }
 
+func (s *VikunjaService) excludedProjects() map[int64]bool {
+	var raw string
+	s.db.QueryRow(`SELECT value FROM app_settings WHERE key = 'vikunja_excluded_projects'`).Scan(&raw)
+	var ids []int64
+	json.Unmarshal([]byte(raw), &ids)
+	m := make(map[int64]bool, len(ids))
+	for _, id := range ids {
+		m[id] = true
+	}
+	return m
+}
+
 func (s *VikunjaService) GetTasks(ctx context.Context) (*VikunjaStatus, error) {
 	baseURL, apiKey := s.config()
 	if baseURL == "" {
@@ -76,12 +88,17 @@ func (s *VikunjaService) GetTasks(ctx context.Context) (*VikunjaStatus, error) {
 		projectMap[p.ID] = p.Title
 	}
 
+	excluded := s.excludedProjects()
+
 	now := time.Now()
 	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
 
 	status := &VikunjaStatus{}
 	for i := range tasks {
 		if tasks[i].Done {
+			continue
+		}
+		if excluded[tasks[i].ProjectID] {
 			continue
 		}
 		if name, ok := projectMap[tasks[i].ProjectID]; ok {
@@ -109,6 +126,30 @@ func (s *VikunjaService) GetTasks(ctx context.Context) (*VikunjaStatus, error) {
 		status.Tasks = []VikunjaTask{}
 	}
 	return status, nil
+}
+
+type VikunjaProject struct {
+	ID    int64  `json:"id"`
+	Title string `json:"title"`
+}
+
+func (s *VikunjaService) GetProjects(ctx context.Context) ([]VikunjaProject, error) {
+	baseURL, apiKey := s.config()
+	if baseURL == "" {
+		return nil, fmt.Errorf("Vikunja URL not configured")
+	}
+	if apiKey == "" {
+		return nil, fmt.Errorf("Vikunja API key not configured")
+	}
+	internal, err := s.fetchProjects(ctx, baseURL, apiKey)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]VikunjaProject, len(internal))
+	for i, p := range internal {
+		out[i] = VikunjaProject{ID: p.ID, Title: p.Title}
+	}
+	return out, nil
 }
 
 type vikunjaAPITask struct {

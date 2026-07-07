@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/sandershome/server/internal/auth"
 	"github.com/sandershome/server/internal/db"
 )
 
@@ -74,8 +75,8 @@ func (h *FamilyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Role != "parent" && req.Role != "kid" {
-		writeError(w, http.StatusBadRequest, "role must be 'parent' or 'kid'")
+	if req.Role != "admin" && req.Role != "parent" && req.Role != "kid" {
+		writeError(w, http.StatusBadRequest, "role must be 'admin', 'parent', or 'kid'")
 		return
 	}
 
@@ -83,11 +84,19 @@ func (h *FamilyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var pinHash string
 	if req.Pin != "" {
 		var err error
-		pinHash, err = hashPin(req.Pin)
+		pinHash, err = auth.HashPin(req.Pin)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to hash pin")
 			return
 		}
+	}
+
+	// Get family_id from the creating user's context, or default
+	familyID := ""
+	if user := auth.UserFromContext(r.Context()); user != nil {
+		familyID = user.FamilyID
+	} else {
+		h.db.QueryRow(`SELECT id FROM families LIMIT 1`).Scan(&familyID)
 	}
 
 	tx, err := h.db.Begin()
@@ -97,8 +106,8 @@ func (h *FamilyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	_, err = tx.Exec(`INSERT INTO family_members (id, name, role, pin_hash, color) VALUES (?, ?, ?, ?, ?)`,
-		id, req.Name, req.Role, pinHash, req.Color)
+	_, err = tx.Exec(`INSERT INTO family_members (id, name, role, pin_hash, color, family_id) VALUES (?, ?, ?, ?, ?, ?)`,
+		id, req.Name, req.Role, pinHash, req.Color, familyID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create family member")
 		return

@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/sandershome/server/internal/ai"
+	"github.com/sandershome/server/internal/auth"
 	"github.com/sandershome/server/internal/background"
 	"github.com/sandershome/server/internal/config"
 	"github.com/sandershome/server/internal/db"
@@ -58,8 +59,10 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 		MaxAge:           300,
 	}))
 
+	// Handlers
 	familyHandler := &FamilyHandler{db: database}
 	authHandler := &AuthHandler{db: database, cfg: cfg}
+	inviteHandler := NewInviteHandler(database, cfg)
 	cashHandler := NewSandersCashHandler(svc.Cash, hub)
 	rewardsHandler := NewRewardsHandler(svc.Rewards, hub)
 	loc, err := time.LoadLocation(cfg.Timezone)
@@ -77,6 +80,13 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 	batchHandler := NewBatchHandler(batchSvc, scheduler)
 	vikunjaHandler := NewVikunjaHandler(service.NewVikunjaService(database))
 	choresHandler := NewChoresHandler(service.NewChoresService(database, svc.Cash), hub)
+	immichHandler := NewImmichHandler(service.NewImmichService(database))
+
+	// Middleware
+	authMw := auth.AuthMiddleware(database, cfg.SessionSecret)
+	optAuth := auth.OptionalAuth(database, cfg.SessionSecret)
+
+	// ── Public routes (no auth) ──
 
 	r.Get("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -85,109 +95,130 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 		writeJSON(w, http.StatusOK, map[string]string{"timezone": cfg.Timezone})
 	})
 
-	r.Route("/api/auth", func(r chi.Router) {
-		r.Post("/login", authHandler.Login)
-		r.Post("/verify", authHandler.Verify)
+	r.Get("/api/setup/status", authHandler.SetupStatus)
+	r.Post("/api/setup", authHandler.Setup)
+	r.Post("/api/auth/login", authHandler.Login)
+	r.Post("/api/auth/pin-verify", authHandler.PinVerify)
+	r.Get("/api/invites/{token}", inviteHandler.Validate)
+	r.Post("/api/invites/accept", inviteHandler.Accept)
+
+	// ── Optional auth routes (kiosk-accessible reads) ──
+
+	r.Group(func(r chi.Router) {
+		r.Use(optAuth)
+
+		r.Get("/api/family", familyHandler.List)
+		r.Get("/api/family/{id}", familyHandler.Get)
+
+		r.Get("/api/sanders-cash/accounts", cashHandler.ListAccounts)
+		r.Get("/api/sanders-cash/accounts/{memberId}", cashHandler.GetAccount)
+		r.Get("/api/sanders-cash/transactions/{accountId}", cashHandler.GetTransactions)
+
+		r.Get("/api/rewards", rewardsHandler.ListRewards)
+		r.Get("/api/rewards/redemptions", rewardsHandler.ListRedemptions)
+
+		r.Get("/api/calendar/sources", calendarHandler.ListSources)
+		r.Get("/api/calendar/events", calendarHandler.GetEvents)
+
+		r.Get("/api/cameras", camerasHandler.ListCameras)
+		r.Get("/api/cameras/frigate/open", camerasHandler.OpenFrigate)
+		r.Get("/api/cameras/status", camerasHandler.GetStatus)
+		r.Get("/api/cameras/{name}/snapshot", camerasHandler.GetSnapshot)
+		r.Get("/api/cameras/{name}/stream", StreamProxy(svc.Frigate))
+		r.Get("/api/cameras/events", camerasHandler.ListEvents)
+		r.Get("/api/cameras/events/{eventId}/thumbnail", camerasHandler.GetEventThumbnail)
+
+		r.Get("/api/weather", weatherHandler.GetWeather)
+
+		r.Get("/api/ai/status", aiHandler.GetStatus)
+		r.Get("/api/ai/briefing", aiHandler.GetDailyBriefing)
+		r.Get("/api/ai/weather-insight", aiHandler.GetWeatherInsight)
+
+		r.Get("/api/gatus/status", gatusHandler.GetStatus)
+		r.Get("/api/seerr/requests", seerrHandler.GetRequests)
+		r.Get("/api/vikunja/tasks", vikunjaHandler.GetTasks)
+		r.Get("/api/vikunja/projects", vikunjaHandler.GetProjects)
+
+		r.Get("/api/chores", choresHandler.List)
+
+		r.Get("/api/immich/album", immichHandler.GetAlbum)
+		r.Get("/api/immich/assets/{id}", immichHandler.ProxyAsset)
+
+		r.Get("/api/settings", settingsHandler.Get)
+
+		r.Get("/ws", func(w http.ResponseWriter, r *http.Request) {
+			ServeWS(hub, w, r)
+		})
 	})
 
-	r.Route("/api/family", func(r chi.Router) {
-		r.Get("/", familyHandler.List)
-		r.Post("/", familyHandler.Create)
-		r.Get("/{id}", familyHandler.Get)
-		r.Put("/{id}", familyHandler.Update)
-		r.Delete("/{id}", familyHandler.Delete)
+	// ── Authenticated routes ──
+
+	r.Group(func(r chi.Router) {
+		r.Use(authMw)
+
+		r.Get("/api/auth/me", authHandler.Me)
+		r.Post("/api/auth/logout", authHandler.Logout)
+
+		// Family management
+		r.With(auth.RequirePermission("family.manage")).Post("/api/family", familyHandler.Create)
+		r.With(auth.RequirePermission("family.manage")).Put("/api/family/{id}", familyHandler.Update)
+		r.With(auth.RequirePermission("family.manage")).Delete("/api/family/{id}", familyHandler.Delete)
+
+		// Sanders Cash writes
+		r.With(auth.RequirePermission("sanders_cash.award")).Post("/api/sanders-cash/transactions", cashHandler.CreateTransaction)
+		r.With(auth.RequirePermission("sanders_cash.award")).Post("/api/sanders-cash/quick-award/{memberId}", cashHandler.QuickAward)
+
+		// Rewards writes
+		r.With(auth.RequirePermission("rewards.manage")).Post("/api/rewards", rewardsHandler.CreateReward)
+		r.With(auth.RequirePermission("rewards.manage")).Put("/api/rewards/{id}", rewardsHandler.UpdateReward)
+		r.With(auth.RequirePermission("rewards.manage")).Delete("/api/rewards/{id}", rewardsHandler.DeleteReward)
+		r.With(auth.RequirePermission("rewards.redeem")).Post("/api/rewards/redeem", rewardsHandler.RequestRedemption)
+		r.With(auth.RequirePermission("rewards.resolve")).Put("/api/rewards/redemptions/{id}", rewardsHandler.ResolveRedemption)
+
+		// Calendar writes
+		r.With(auth.RequirePermission("calendar.edit")).Get("/api/calendar/sources/{id}/remote-calendars", calendarHandler.ListRemoteCalendars)
+		r.With(auth.RequirePermission("calendar.edit")).Post("/api/calendar/sources", calendarHandler.CreateSource)
+		r.With(auth.RequirePermission("calendar.edit")).Post("/api/calendar/sources/{id}/sync", calendarHandler.SyncSource)
+		r.With(auth.RequirePermission("calendar.edit")).Put("/api/calendar/sources/{id}", calendarHandler.UpdateSource)
+		r.With(auth.RequirePermission("calendar.edit")).Delete("/api/calendar/sources/{id}", calendarHandler.DeleteSource)
+		r.With(auth.RequirePermission("calendar.edit")).Post("/api/calendar/events", calendarHandler.CreateEvent)
+		r.With(auth.RequirePermission("calendar.edit")).Delete("/api/calendar/events/{id}", calendarHandler.DeleteEvent)
+		r.With(auth.RequirePermission("calendar.edit")).Post("/api/calendar/sync", calendarHandler.SyncNow)
+
+		// Chores writes
+		r.With(auth.RequirePermission("chores.manage")).Post("/api/chores", choresHandler.Create)
+		r.With(auth.RequirePermission("chores.manage")).Put("/api/chores/{id}", choresHandler.Update)
+		r.With(auth.RequirePermission("chores.manage")).Delete("/api/chores/{id}", choresHandler.Delete)
+		r.With(auth.RequirePermission("chores.complete")).Post("/api/chores/{id}/complete", choresHandler.Complete)
+		r.With(auth.RequirePermission("chores.complete")).Post("/api/chores/{id}/uncomplete", choresHandler.Uncomplete)
+
+		// Settings
+		r.With(auth.RequirePermission("settings.edit")).Put("/api/settings", settingsHandler.Update)
+		r.With(auth.RequirePermission("settings.edit")).Post("/api/settings/mqtt/test", settingsHandler.TestMQTT)
+
+		// AI providers
+		r.With(auth.RequirePermission("settings.edit")).Get("/api/ai/providers", aiProvidersHandler.List)
+		r.With(auth.RequirePermission("settings.edit")).Post("/api/ai/providers", aiProvidersHandler.Create)
+		r.With(auth.RequirePermission("settings.edit")).Put("/api/ai/providers/{id}", aiProvidersHandler.Update)
+		r.With(auth.RequirePermission("settings.edit")).Delete("/api/ai/providers/{id}", aiProvidersHandler.Delete)
+		r.With(auth.RequirePermission("settings.edit")).Post("/api/ai/providers/test", aiProvidersHandler.TestConnection)
+		r.With(auth.RequirePermission("settings.edit")).Get("/api/ai/providers/{id}/models", aiProvidersHandler.ListModels)
+		r.With(auth.RequirePermission("settings.edit")).Post("/api/ai/briefing", aiHandler.RegenerateDailyBriefing)
+
+		// Batch
+		r.With(auth.RequirePermission("settings.view")).Get("/api/batch/runs", batchHandler.ListRuns)
+		r.With(auth.RequirePermission("settings.edit")).Post("/api/batch/trigger/briefing", batchHandler.TriggerBriefing)
+
+		// Immich test
+		r.With(auth.RequirePermission("settings.edit")).Post("/api/immich/test", immichHandler.Test)
+
+		// Invites
+		r.With(auth.RequirePermission("invites.manage")).Post("/api/invites", inviteHandler.Create)
+		r.With(auth.RequirePermission("invites.manage")).Get("/api/invites", inviteHandler.List)
+		r.With(auth.RequirePermission("invites.manage")).Delete("/api/invites/{id}", inviteHandler.Revoke)
 	})
 
-	r.Route("/api/sanders-cash", func(r chi.Router) {
-		r.Get("/accounts", cashHandler.ListAccounts)
-		r.Get("/accounts/{memberId}", cashHandler.GetAccount)
-		r.Post("/transactions", cashHandler.CreateTransaction)
-		r.Get("/transactions/{accountId}", cashHandler.GetTransactions)
-		r.Post("/quick-award/{memberId}", cashHandler.QuickAward)
-	})
-
-	r.Route("/api/rewards", func(r chi.Router) {
-		r.Get("/", rewardsHandler.ListRewards)
-		r.Post("/", rewardsHandler.CreateReward)
-		r.Put("/{id}", rewardsHandler.UpdateReward)
-		r.Delete("/{id}", rewardsHandler.DeleteReward)
-		r.Post("/redeem", rewardsHandler.RequestRedemption)
-		r.Get("/redemptions", rewardsHandler.ListRedemptions)
-		r.Put("/redemptions/{id}", rewardsHandler.ResolveRedemption)
-	})
-
-	r.Route("/api/calendar", func(r chi.Router) {
-		r.Get("/sources", calendarHandler.ListSources)
-		r.Get("/sources/{id}/remote-calendars", calendarHandler.ListRemoteCalendars)
-		r.Post("/sources", calendarHandler.CreateSource)
-		r.Post("/sources/{id}/sync", calendarHandler.SyncSource)
-		r.Put("/sources/{id}", calendarHandler.UpdateSource)
-		r.Delete("/sources/{id}", calendarHandler.DeleteSource)
-		r.Get("/events", calendarHandler.GetEvents)
-		r.Post("/events", calendarHandler.CreateEvent)
-		r.Delete("/events/{id}", calendarHandler.DeleteEvent)
-		r.Post("/sync", calendarHandler.SyncNow)
-	})
-
-	r.Route("/api/cameras", func(r chi.Router) {
-		r.Get("/", camerasHandler.ListCameras)
-		r.Get("/frigate/open", camerasHandler.OpenFrigate)
-		r.Get("/status", camerasHandler.GetStatus)
-		r.Get("/{name}/snapshot", camerasHandler.GetSnapshot)
-		r.Get("/{name}/stream", StreamProxy(svc.Frigate))
-		r.Get("/events", camerasHandler.ListEvents)
-		r.Get("/events/{eventId}/thumbnail", camerasHandler.GetEventThumbnail)
-	})
-
-	r.Route("/api/settings", func(r chi.Router) {
-		r.Get("/", settingsHandler.Get)
-		r.Put("/", settingsHandler.Update)
-		r.Post("/mqtt/test", settingsHandler.TestMQTT)
-	})
-
-	r.Get("/api/weather", weatherHandler.GetWeather)
-
-	r.Route("/api/ai", func(r chi.Router) {
-		r.Get("/status", aiHandler.GetStatus)
-		r.Get("/briefing", aiHandler.GetDailyBriefing)
-		r.Post("/briefing", aiHandler.RegenerateDailyBriefing)
-		r.Get("/weather-insight", aiHandler.GetWeatherInsight)
-		r.Get("/providers", aiProvidersHandler.List)
-		r.Post("/providers", aiProvidersHandler.Create)
-		r.Put("/providers/{id}", aiProvidersHandler.Update)
-		r.Delete("/providers/{id}", aiProvidersHandler.Delete)
-		r.Post("/providers/test", aiProvidersHandler.TestConnection)
-		r.Get("/providers/{id}/models", aiProvidersHandler.ListModels)
-	})
-
-	r.Get("/api/gatus/status", gatusHandler.GetStatus)
-	r.Get("/api/seerr/requests", seerrHandler.GetRequests)
-
-	r.Route("/api/batch", func(r chi.Router) {
-		r.Get("/runs", batchHandler.ListRuns)
-		r.Post("/trigger/briefing", batchHandler.TriggerBriefing)
-	})
-
-	r.Get("/api/vikunja/tasks", vikunjaHandler.GetTasks)
-
-	immichHandler := NewImmichHandler(service.NewImmichService(database))
-	r.Post("/api/immich/test", immichHandler.Test)
-	r.Get("/api/immich/album", immichHandler.GetAlbum)
-	r.Get("/api/immich/assets/{id}", immichHandler.ProxyAsset)
-
-	r.Route("/api/chores", func(r chi.Router) {
-		r.Get("/", choresHandler.List)
-		r.Post("/", choresHandler.Create)
-		r.Put("/{id}", choresHandler.Update)
-		r.Delete("/{id}", choresHandler.Delete)
-		r.Post("/{id}/complete", choresHandler.Complete)
-		r.Post("/{id}/uncomplete", choresHandler.Uncomplete)
-	})
-
-	r.Get("/ws", func(w http.ResponseWriter, r *http.Request) {
-		ServeWS(hub, w, r)
-	})
-
+	// SPA handler
 	if staticDir := cfg.StaticDir; staticDir != "" {
 		r.NotFound(spaHandler(staticDir))
 	}

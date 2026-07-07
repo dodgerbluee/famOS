@@ -4,13 +4,13 @@
   --color-primary: #6366f1;
   --color-primary-light: #818cf8;
   --color-primary-dark: #4f46e5;
-  --color-surface: #1e1e2e;
-  --color-surface-light: #2a2a3e;
-  --color-surface-lighter: #363650;
-  --color-bg: #11111b;
-  --color-text: #cdd6f4;
-  --color-text-dim: #a6adc8;
-  --color-text-bright: #f5f5f7;
+  --color-surface: #121212;
+  --color-surface-light: #1a1a1a;
+  --color-surface-lighter: #2d2d2d;
+  --color-bg: #0a0a0a;
+  --color-text: #e0e0e0;
+  --color-text-dim: #b0b0b0;
+  --color-text-bright: #ffffff;
   --color-accent-green: #a6e3a1;
   --color-accent-red: #f38ba8;
   --color-accent-yellow: #f9e2af;
@@ -48,14 +48,12 @@ html, body, #root {
 }
 
 @keyframes subtle-pulse {
-  0%, 100% { outline-color: transparent; }
-  50% { outline-color: var(--pulse-color, var(--color-accent-peach)); }
+  0%, 100% { box-shadow: inset 0 0 0 0px transparent; }
+  50% { box-shadow: inset 0 0 0 2px var(--pulse-color, var(--color-accent-peach)); }
 }
 
 .animate-subtle-pulse {
   animation: subtle-pulse 3s ease-in-out infinite;
-  outline: 2px solid transparent;
-  outline-offset: -2px;
 }
 
 .animate-subtle-pulse--red { --pulse-color: var(--color-accent-red); }

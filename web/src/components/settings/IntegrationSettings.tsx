@@ -21,6 +21,8 @@ export function IntegrationSettings() {
   const [seerrApiKey, setSeerrApiKey] = useState('');
   const [vikunjaUrl, setVikunjaUrl] = useState('');
   const [vikunjaApiKey, setVikunjaApiKey] = useState('');
+  const [vikunjaProjects, setVikunjaProjects] = useState<{ id: number; title: string }[]>([]);
+  const [vikunjaExcludedProjects, setVikunjaExcludedProjects] = useState<number[]>([]);
   const [immichUrl, setImmichUrl] = useState('');
   const [immichApiKey, setImmichApiKey] = useState('');
   const [screensaverAlbumId, setScreensaverAlbumId] = useState('');
@@ -62,6 +64,10 @@ export function IntegrationSettings() {
       setSeerrApiKey(s.seerr_api_key || '');
       setVikunjaUrl(s.vikunja_url || '');
       setVikunjaApiKey(s.vikunja_api_key || '');
+      try {
+        const ids = JSON.parse(s.vikunja_excluded_projects || '[]');
+        if (Array.isArray(ids)) setVikunjaExcludedProjects(ids);
+      } catch { /* use default */ }
       setImmichUrl(s.immich_url || '');
       setImmichApiKey(s.immich_api_key || '');
       setScreensaverAlbumId(s.screensaver_album_id || '');
@@ -69,6 +75,7 @@ export function IntegrationSettings() {
     }).catch(() => {});
 
     api.get<Camera[]>('/api/cameras').then(setAvailableCameras).catch(() => {});
+    api.get<{ id: number; title: string }[]>('/api/vikunja/projects').then(setVikunjaProjects).catch(() => {});
   }, []);
 
   const save = async () => {
@@ -97,6 +104,7 @@ export function IntegrationSettings() {
         seerr_api_key: seerrApiKey,
         vikunja_url: vikunjaUrl,
         vikunja_api_key: vikunjaApiKey,
+        vikunja_excluded_projects: JSON.stringify(vikunjaExcludedProjects),
         immich_url: immichUrl,
         immich_api_key: immichApiKey,
         screensaver_album_id: screensaverAlbumId,
@@ -491,6 +499,35 @@ export function IntegrationSettings() {
             placeholder="From Vikunja Settings > API Tokens"
             className="w-full bg-surface-lighter text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
           />
+        </div>
+        <div>
+          <label className="block text-sm text-text-dim mb-2">Projects</label>
+          {vikunjaProjects.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {vikunjaProjects.map((project) => {
+                const excluded = vikunjaExcludedProjects.includes(project.id);
+                return (
+                  <button
+                    key={project.id}
+                    type="button"
+                    onClick={() =>
+                      setVikunjaExcludedProjects((prev) =>
+                        excluded ? prev.filter((id) => id !== project.id) : [...prev, project.id]
+                      )
+                    }
+                    className={`px-4 py-2 rounded-xl text-sm font-medium min-h-[44px] transition-colors ${
+                      excluded ? 'bg-surface-lighter text-text-dim' : 'bg-primary text-white'
+                    }`}
+                  >
+                    {project.title}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-text-dim text-sm">Save Vikunja settings first, then projects will appear here.</p>
+          )}
+          <p className="text-text-dim text-xs mt-1">Toggle projects on/off. Disabled projects won't appear in the Tasks widget.</p>
         </div>
       </div>
 

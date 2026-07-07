@@ -1,5 +1,5 @@
-import { useRef, useEffect, useCallback, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
-import { type GridCardConfig, GRID_COLS, CARD_MIN_SIZES, hasCollision, isInBounds, computeCellDimensions, GRID_GAP } from '../../lib/gridLayout';
+import { useRef, useState, useEffect, useCallback, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
+import { type GridCardConfig, GRID_COLS, CARD_MIN_SIZES, hasCollision, rectsOverlap, isInBounds, computeCellDimensions, GRID_GAP } from '../../lib/gridLayout';
 
 interface GridCardProps {
   card: GridCardConfig;
@@ -11,6 +11,7 @@ interface GridCardProps {
   totalRows: number;
   pulseColor?: 'red' | 'peach' | 'pink';
   onMove: (id: string, col: number, row: number) => void;
+  onSwap: (id: string, col: number, row: number, otherId: string, otherCol: number, otherRow: number) => void;
   onResize: (id: string, colSpan: number, rowSpan: number) => void;
   onRemove: (id: string) => void;
   children: ReactNode;
@@ -39,15 +40,30 @@ const PULSE_CLASS: Record<string, string> = {
 
 export function GridCard({
   card, label, editing, allCards, containerRef,
-  gridMode, totalRows, pulseColor, onMove, onResize, onRemove, children,
+  gridMode, totalRows, pulseColor, onMove, onSwap, onResize, onRemove, children,
 }: GridCardProps) {
+  const CARD_REFERENCE_WIDTH = 300;
   const cardRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
+  const [contentScale, setContentScale] = useState(1);
+
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width;
+      setContentScale(Math.max(0.55, Math.min(1, w / CARD_REFERENCE_WIDTH)));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const cardDataRef = useRef({ card, allCards, gridMode, totalRows });
   cardDataRef.current = { card, allCards, gridMode, totalRows };
 
   const onMoveRef = useRef(onMove);
   onMoveRef.current = onMove;
+  const onSwapRef = useRef(onSwap);
+  onSwapRef.current = onSwap;
   const onResizeRef = useRef(onResize);
   onResizeRef.current = onResize;
 
@@ -70,12 +86,26 @@ export function GridCard({
       const dRows = Math.round(dy / stepY);
       const newCol = ds.origCol + dCols;
       const newRow = ds.origRow + dRows;
+      if (newCol === c.col && newRow === c.row) return;
       const candidate: GridCardConfig = { ...c, col: newCol, row: newRow };
-      if (
-        isInBounds(candidate, gm === 'fill' ? tr : undefined) &&
-        !hasCollision(candidate, all)
-      ) {
+      if (!isInBounds(candidate, gm === 'fill' ? tr : undefined)) return;
+
+      if (!hasCollision(candidate, all)) {
         onMoveRef.current(c.id, newCol, newRow);
+      } else {
+        const colliders = all.filter((o) => o.id !== c.id && rectsOverlap(candidate, o));
+        if (colliders.length === 1) {
+          const other = colliders[0];
+          const swapped: GridCardConfig = { ...other, col: c.col, row: c.row };
+          const othersExcluding = all.filter((o) => o.id !== c.id && o.id !== other.id);
+          if (
+            isInBounds(swapped, gm === 'fill' ? tr : undefined) &&
+            !hasCollision(swapped, othersExcluding) &&
+            !hasCollision(candidate, othersExcluding)
+          ) {
+            onSwapRef.current(c.id, newCol, newRow, other.id, c.col, c.row);
+          }
+        }
       }
     } else {
       const mins = CARD_MIN_SIZES[c.id] || { minCol: 1, minRow: 1 };
@@ -171,7 +201,7 @@ export function GridCard({
   return (
     <div
       ref={cardRef}
-      className={`bg-surface rounded-2xl relative overflow-hidden ${
+      className={`bg-surface-light rounded-2xl border border-surface-lighter relative overflow-hidden ${
         editing ? 'ring-1 ring-surface-lighter' : ''
       } ${!editing && pulseColor ? PULSE_CLASS[pulseColor] : ''}`}
       style={style}
@@ -235,8 +265,18 @@ export function GridCard({
       )}
 
       {/* Card content */}
-      <div className={`h-full overflow-y-auto ${editing ? 'p-4 pt-8' : 'p-5'}`}>
-        {children}
+      <div className="w-full h-full overflow-hidden">
+        <div
+          className={`flex flex-col overflow-y-auto overflow-x-hidden ${editing ? 'px-3 pb-3 pt-7' : 'px-3 pb-3 pt-2.5'}`}
+          style={{
+            transformOrigin: 'top left',
+            transform: `scale(${contentScale})`,
+            width: `${100 / contentScale}%`,
+            height: `${100 / contentScale}%`,
+          }}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );

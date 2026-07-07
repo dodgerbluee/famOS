@@ -24,6 +24,7 @@ export function AddEventForm({ defaultDate, sources, onCreated, onCancel }: AddE
   const [loadingCalendars, setLoadingCalendars] = useState(false);
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(dateStr);
+  const [endDate, setEndDate] = useState(dateStr);
   const [allDay, setAllDay] = useState(false);
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('10:00');
@@ -73,10 +74,15 @@ export function AddEventForm({ defaultDate, sources, onCreated, onCancel }: AddE
     setError('');
     try {
       const startAt = allDay ? `${date}T00:00` : `${date}T${startTime}`;
-      const endAt = allDay ? '' : `${date}T${endTime}`;
+      const endAt = allDay ? `${endDate}T23:59` : `${date}T${endTime}`;
 
       if (!allDay && endAt <= startAt) {
         setError('End time must be after start time');
+        setSaving(false);
+        return;
+      }
+      if (allDay && endDate < date) {
+        setError('End date must be on or after start date');
         setSaving(false);
         return;
       }
@@ -181,16 +187,6 @@ export function AddEventForm({ defaultDate, sources, onCreated, onCancel }: AddE
           />
         </div>
 
-        <div>
-          <label className="block text-sm text-text-dim mb-1">Date</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full bg-surface-light text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
-
         <label className="flex items-center gap-3 py-1">
         <div
           role="switch"
@@ -209,27 +205,63 @@ export function AddEventForm({ defaultDate, sources, onCreated, onCancel }: AddE
         <span className="text-sm text-text-bright">All day</span>
         </label>
 
-        {!allDay && (
+        {allDay ? (
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-text-dim mb-1">Start</label>
+              <label className="block text-sm text-text-dim mb-1">Start Date</label>
               <input
-                type="time"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
+                type="date"
+                value={date}
+                onChange={(e) => {
+                  setDate(e.target.value);
+                  if (e.target.value > endDate) setEndDate(e.target.value);
+                }}
                 className="w-full bg-surface-light text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
             <div>
-              <label className="block text-sm text-text-dim mb-1">End</label>
+              <label className="block text-sm text-text-dim mb-1">End Date</label>
               <input
-                type="time"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
+                type="date"
+                value={endDate}
+                min={date}
+                onChange={(e) => setEndDate(e.target.value)}
                 className="w-full bg-surface-light text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
           </div>
+        ) : (
+          <>
+            <div>
+              <label className="block text-sm text-text-dim mb-1">Date</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full bg-surface-light text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm text-text-dim mb-1">Start</label>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="w-full bg-surface-light text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-text-dim mb-1">End</label>
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  className="w-full bg-surface-light text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+            </div>
+          </>
         )}
 
         <div>

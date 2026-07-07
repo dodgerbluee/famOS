@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/sandershome/server/internal/ai"
+	"github.com/sandershome/server/internal/auth"
+	"github.com/sandershome/server/internal/db"
 	"github.com/sandershome/server/internal/service"
 )
 
@@ -18,6 +20,7 @@ type Scheduler struct {
 	cash      *service.SandersCashService
 	engine    *ai.Engine
 	batch     *service.BatchService
+	db        *db.DB
 	broadcast BroadcastFunc
 	timezone  string
 }
@@ -28,6 +31,7 @@ func NewScheduler(
 	cash *service.SandersCashService,
 	engine *ai.Engine,
 	batch *service.BatchService,
+	database *db.DB,
 	broadcast BroadcastFunc,
 	timezone string,
 ) *Scheduler {
@@ -37,6 +41,7 @@ func NewScheduler(
 		cash:      cash,
 		engine:    engine,
 		batch:     batch,
+		db:        database,
 		broadcast: broadcast,
 		timezone:  timezone,
 	}
@@ -45,6 +50,20 @@ func NewScheduler(
 func (s *Scheduler) Start(ctx context.Context) {
 	go s.runCalendarSync(ctx)
 	go s.runDailyBriefing(ctx)
+	go s.runSessionCleanup(ctx)
+}
+
+func (s *Scheduler) runSessionCleanup(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			auth.CleanExpiredSessions(s.db)
+		}
+	}
 }
 
 func (s *Scheduler) runCalendarSync(ctx context.Context) {

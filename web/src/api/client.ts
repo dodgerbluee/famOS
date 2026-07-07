@@ -11,6 +11,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
+    if (res.status === 401 && !path.includes('/api/auth/') && !path.includes('/api/setup/')) {
+      window.location.href = '/login';
+      throw new Error('Session expired');
+    }
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body.error || res.statusText);
   }
@@ -34,7 +38,7 @@ export const api = {
 export interface FamilyMember {
   id: string;
   name: string;
-  role: 'parent' | 'kid';
+  role: 'admin' | 'parent' | 'kid' | 'kiosk';
   avatarUrl: string;
   color: string;
   sortOrder: number;
@@ -130,6 +134,7 @@ export interface CalendarEvent {
   sourceColor: string;
   sourceName: string;
   sourceCalendarName: string;
+  sourceCalendarColor: string;
 }
 
 export interface AirQuality {

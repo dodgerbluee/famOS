@@ -60,21 +60,16 @@ export function WeatherCard({ compact }: WeatherCardProps) {
   if (compact) {
     const aq = weather.airQuality;
     return (
-      <div className="space-y-2.5">
-        <h2 className="text-lg font-semibold text-text-bright">Weather</h2>
-
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <span className="text-3xl">{icon}</span>
-            <div>
-              <div className="flex items-end gap-2">
-                <p className="text-text-bright text-2xl font-bold leading-none">
-                  {Math.round(weather.temperature)}°F
-                </p>
-                <p className="text-accent-red text-xs leading-none mb-0.5">↑ {Math.round(weather.high)}°</p>
-                <p className="text-accent-blue text-xs leading-none mb-0.5">↓ {Math.round(weather.low)}°</p>
-              </div>
-              <p className="text-text-dim text-xs mt-1 truncate">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-4">
+            <h2 className="text-lg font-semibold text-text-bright">Weather</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">{icon}</span>
+              <p className="text-text-bright text-xl font-bold leading-none">{Math.round(weather.temperature)}°F</p>
+              <p className="text-accent-red text-xs leading-none">↑{Math.round(weather.high)}°</p>
+              <p className="text-accent-blue text-xs leading-none">↓{Math.round(weather.low)}°</p>
+              <p className="text-text-dim text-xs ml-1">
                 {weather.condition}
                 {weather.feelsLike && Math.round(weather.feelsLike) !== Math.round(weather.temperature)
                   ? ` · Feels ${Math.round(weather.feelsLike)}°`
@@ -85,60 +80,54 @@ export function WeatherCard({ compact }: WeatherCardProps) {
           <SunTimes weather={weather} timezone={timezone} compact dusk={dusk} />
         </div>
 
-        <StatGrid weather={weather} aq={aq} />
+        <div className="flex gap-3 items-start">
+          <div className="flex-1 min-w-0">
+            <StatGrid weather={weather} aq={aq} />
+          </div>
 
-        {/* AI insight */}
-        {insight?.summary && (
-          <p className="text-accent-blue text-xs italic">{insight.summary}</p>
-        )}
-
-        {weather.hourly && weather.hourly.length > 0 && (
-          <div>
-            <p className="text-text-dim text-[10px] font-medium mb-1.5 uppercase tracking-wide">Hourly</p>
-            <div className="grid grid-cols-12 gap-0">
-              {weather.hourly.slice(0, 12).map((h) => {
-                const hour = formatDate(h.time, timezone, { hour: 'numeric' });
-                const hIcon = CONDITION_ICONS[h.condition] || '🌤️';
+          {weather.daily && weather.daily.length > 1 && (
+            <div className="shrink-0 space-y-0">
+              {weather.daily.slice(1, 6).map((d) => {
+                const dayIcon = CONDITION_ICONS[d.condition] || '🌤️';
+                const dayLabel = formatDate(d.date + 'T12:00', timezone, { weekday: 'short' });
                 return (
-                  <div key={h.time} className="flex flex-col items-center">
-                    <span className="text-text-dim text-[10px]">{hour}</span>
-                    <span className="text-sm">{hIcon}</span>
-                    <span className="text-text-bright text-xs font-medium">{Math.round(h.temperature)}°</span>
-                    {h.precipProb > 0 && (
-                      <span className="text-accent-blue text-[9px]">{h.precipProb}%</span>
-                    )}
+                  <div key={d.date} className="flex items-center gap-1.5 py-px">
+                    <span className="text-text-dim text-[11px] w-7">{dayLabel}</span>
+                    <span className="text-xs">{dayIcon}</span>
+                    <span className="text-accent-blue text-[11px] w-5 text-right">{Math.round(d.low)}°</span>
+                    <div className="w-16 h-0.5 rounded-full bg-surface-lighter overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-accent-blue to-accent-red"
+                        style={{ width: `${Math.min(100, Math.max(10, ((d.high - d.low) / 40) * 100))}%` }}
+                      />
+                    </div>
+                    <span className="text-accent-red text-[11px] w-5">{Math.round(d.high)}°</span>
                   </div>
                 );
               })}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        {weather.daily && weather.daily.length > 1 && (
-          <div className="space-y-0.5">
-            {weather.daily.slice(1, 6).map((d) => {
-              const dayIcon = CONDITION_ICONS[d.condition] || '🌤️';
-              const dayLabel = formatDate(d.date + 'T12:00', timezone, { weekday: 'short' });
+        {weather.hourly && weather.hourly.length > 0 && (
+          <div className="grid grid-cols-12 gap-0">
+            {weather.hourly.slice(0, 12).map((h) => {
+              const hour = formatDate(h.time, timezone, { hour: 'numeric' });
+              const hIcon = CONDITION_ICONS[h.condition] || '🌤️';
               return (
-                <div key={d.date} className="flex items-center gap-2 py-0.5">
-                  <span className="text-text-dim text-xs w-8">{dayLabel}</span>
-                  <span className="text-sm">{dayIcon}</span>
-                  <span className="text-accent-blue text-xs w-6 text-right">{Math.round(d.low)}°</span>
-                  <div className="flex-1 mx-1 h-1 rounded-full bg-surface-lighter overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-accent-blue to-accent-red"
-                      style={{ width: `${Math.min(100, Math.max(10, ((d.high - d.low) / 40) * 100))}%` }}
-                    />
-                  </div>
-                  <span className="text-accent-red text-xs w-6">{Math.round(d.high)}°</span>
-                  {d.precipProb > 0 && (
-                    <span className="text-accent-blue text-[10px] w-7 text-right">{d.precipProb}%</span>
+                <div key={h.time} className="flex flex-col items-center">
+                  <span className="text-text-dim text-[10px]">{hour}</span>
+                  <span className="text-sm">{hIcon}</span>
+                  <span className="text-text-bright text-[11px] font-medium">{Math.round(h.temperature)}°</span>
+                  {h.precipProb > 0 && (
+                    <span className="text-accent-blue text-[9px]">{h.precipProb}%</span>
                   )}
                 </div>
               );
             })}
           </div>
         )}
+
       </div>
     );
   }

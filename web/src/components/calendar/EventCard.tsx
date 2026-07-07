@@ -1,6 +1,7 @@
 import type { CalendarEvent } from '../../api/client';
-import { getEventVisualState } from '../../lib/calendar';
-import { formatTime, useTimezone } from '../../lib/timezone';
+import { getEventVisualState, isMultiDayEvent } from '../../lib/calendar';
+import { colorWithAlpha, formatCalendarLabel } from '../../lib/calendarDisplay';
+import { formatDate, formatTime, useTimezone } from '../../lib/timezone';
 
 interface EventCardProps {
   event: CalendarEvent;
@@ -12,36 +13,42 @@ interface EventCardProps {
 export function EventCard({ event, compact, onSelect, referenceTime = new Date() }: EventCardProps) {
   const timezone = useTimezone();
   const visualState = getEventVisualState(event, referenceTime);
-  const startTime = event.allDay
-    ? 'All Day'
-    : formatTime(event.startAt, timezone);
+  const multiDay = isMultiDayEvent(event, timezone);
 
-  const endTime = event.allDay
-    ? ''
-    : formatTime(event.endAt, timezone);
+  let timeLabel: string;
+  if (multiDay) {
+    const startLabel = formatDate(event.startAt, timezone, { month: 'short', day: 'numeric' });
+    const endLabel = formatDate(event.endAt, timezone, { month: 'short', day: 'numeric' });
+    timeLabel = `${startLabel} – ${endLabel}`;
+  } else if (event.allDay) {
+    timeLabel = 'All Day';
+  } else {
+    const endTime = formatTime(event.endAt, timezone);
+    timeLabel = `${formatTime(event.startAt, timezone)} – ${endTime}`;
+  }
 
   return (
     <button
       onClick={() => onSelect?.(event)}
-      className={`rounded-xl flex gap-3 w-full text-left ${compact ? 'p-2' : 'p-3 bg-surface-light'} ${visualState === 'muted' ? 'opacity-45' : ''} ${visualState === 'highlight' ? 'ring-1 ring-accent-yellow/50 bg-accent-yellow/10' : ''} ${onSelect ? 'active:scale-[0.98] transition-transform' : ''}`}
+      className={`rounded-lg flex w-full text-left ${compact ? 'gap-1.5 py-1 px-1.5' : 'gap-3 p-3 bg-surface-light rounded-xl'} ${visualState === 'muted' ? 'opacity-45' : ''} ${visualState === 'highlight' ? 'ring-1 ring-accent-yellow/50 bg-accent-yellow/10' : ''} ${onSelect ? 'active:scale-[0.98] transition-transform' : ''}`}
     >
       <div
-        className="w-1 rounded-full flex-shrink-0"
+        className={`rounded-full flex-shrink-0 ${compact ? 'w-0.5' : 'w-1'}`}
         style={{ backgroundColor: event.sourceColor || '#6366f1' }}
       />
       <div className="flex-1 min-w-0">
-        <p className={`font-medium truncate ${visualState === 'muted' ? 'text-text-dim' : 'text-text-bright'} ${compact ? 'text-sm' : ''}`}>
+        <p className={`font-medium truncate ${visualState === 'muted' ? 'text-text-dim' : 'text-text-bright'} ${compact ? 'text-xs' : ''}`}>
           {event.title}
         </p>
-        <div className="flex items-center gap-2 text-text-dim text-xs mt-0.5">
-          <span>{startTime}{endTime ? ` – ${endTime}` : ''}</span>
+        <p className={`text-text-dim mt-0.5 truncate ${compact ? 'text-[10px]' : 'text-xs'}`}>
+          <span>{timeLabel}</span>
           {event.location && (
             <>
-              <span>·</span>
-              <span className="truncate">{event.location}</span>
+              <span> · </span>
+              <span>{event.location}</span>
             </>
           )}
-        </div>
+        </p>
         {event.aiEnrichment && !compact && (
           <p className="text-accent-blue text-xs mt-1 italic">
             {tryParseEnrichment(event.aiEnrichment)}
@@ -51,11 +58,11 @@ export function EventCard({ event, compact, onSelect, referenceTime = new Date()
           <span
             className="inline-block text-xs px-2 py-0.5 rounded-full mt-1"
             style={{
-              backgroundColor: `${event.sourceColor || '#6366f1'}22`,
+              backgroundColor: colorWithAlpha(event.sourceColor || '#6366f1'),
               color: event.sourceColor || '#6366f1',
             }}
           >
-            {event.sourceName}
+            {formatCalendarLabel(event.sourceCalendarName || event.sourceName)}
           </span>
         )}
       </div>
