@@ -102,8 +102,8 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
   const nextMonth = () => onDateChange?.(addMonthsInTimezone(date, 1, timezone));
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between mb-4 shrink-0">
         <button onClick={prevMonth} className="text-text-dim px-3 py-2 min-h-[48px] min-w-[48px] flex items-center justify-center text-xl">‹</button>
         <p className="text-text-bright font-semibold text-lg">
           {formatDate(date, timezone, { month: 'long', year: 'numeric' })}
@@ -111,19 +111,19 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
         <button onClick={nextMonth} className="text-text-dim px-3 py-2 min-h-[48px] min-w-[48px] flex items-center justify-center text-xl">›</button>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 mb-1">
+      <div className="grid grid-cols-7 gap-1 mb-1 shrink-0">
         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
           <div key={d} className="text-center text-text-dim text-xs font-medium py-1">{d}</div>
         ))}
       </div>
 
-      <div className="space-y-1">
+      <div className="flex-1 min-h-0 flex flex-col space-y-1">
         {weeks.map((week, weekIdx) => {
           const segments = getWeekSegments(week);
           const laneCount = segments.length > 0 ? Math.max(...segments.map((s) => s.lane)) + 1 : 0;
 
           return (
-            <div key={weekIdx}>
+            <div key={weekIdx} className="flex-1 flex flex-col min-h-0">
               {laneCount > 0 && (
                 <div className="grid grid-cols-7 gap-x-1 mb-0.5" style={{ gridTemplateRows: `repeat(${laneCount}, 20px)` }}>
                   {segments.map((seg) => (
@@ -146,9 +146,9 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
                 </div>
               )}
 
-              <div className="grid grid-cols-7 gap-1">
+              <div className="grid grid-cols-7 gap-1 flex-1">
                 {week.map((day, colIdx) => {
-                  if (!day) return <div key={`e-${weekIdx}-${colIdx}`} className="min-h-[60px] lg:min-h-[80px]" />;
+                  if (!day) return <div key={`e-${weekIdx}-${colIdx}`} />;
 
                   const dayStr = getDateKey(day, timezone);
                   const daySingleEvents = singleDay.filter((ev) => eventSpansDate(ev, dayStr, timezone));
@@ -160,7 +160,7 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
                     <div
                       key={day.toISOString()}
                       onClick={() => onDaySelect?.(day)}
-                      className={`rounded-lg p-1 min-h-[60px] lg:min-h-[80px] cursor-pointer transition-colors flex flex-col ${
+                      className={`rounded-lg p-1 cursor-pointer transition-colors flex flex-col ${
                         isToday
                           ? 'bg-primary/10 ring-1 ring-primary/40'
                           : daySingleEvents.length > 0
