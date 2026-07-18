@@ -28,6 +28,14 @@ export function LiveStream({ cameraName, className = '' }: LiveStreamProps) {
       if (!connected) setUseFallback(true);
     }, 5000);
 
+    const MAX_QUEUED_CHUNKS = 60;
+    function pushChunk(chunk: ArrayBuffer) {
+      queue.push(chunk);
+      while (queue.length > MAX_QUEUED_CHUNKS) {
+        queue.shift();
+      }
+    }
+
     function flushQueue() {
       if (!sb || sb.updating || queue.length === 0) return;
       const chunk = queue.shift()!;
@@ -69,10 +77,10 @@ export function LiveStream({ cameraName, className = '' }: LiveStreamProps) {
           }
         } else if (ev.data instanceof ArrayBuffer && sb) {
           if (sb.updating) {
-            queue.push(ev.data);
+            pushChunk(ev.data);
           } else {
             try { sb.appendBuffer(ev.data); }
-            catch { queue.push(ev.data); }
+            catch { pushChunk(ev.data); }
           }
         }
       };

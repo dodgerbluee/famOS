@@ -7,6 +7,11 @@ interface CameraGridProps {
 
 type Settings = Record<string, string>;
 
+// Fan connection attempts out over time instead of firing them all in the
+// same instant (avoids a thundering-herd of simultaneous go2rtc cold-starts),
+// without ever permanently blocking a tile from connecting.
+const STREAM_START_STAGGER_MS = 250;
+
 export function CameraGrid({ onSelect }: CameraGridProps) {
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [available, setAvailable] = useState<boolean | null>(null);
@@ -157,11 +162,30 @@ function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragE
     let ws: WebSocket | null = null;
     let sb: SourceBuffer | null = null;
     const queue: ArrayBuffer[] = [];
-    let connected = false;
+    let receivedStreamData = false;
+    let cancelled = false;
+    let failTimer: ReturnType<typeof setTimeout> | null = null;
+    let playInterval: ReturnType<typeof setInterval> | null = null;
+    let staggerTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const failTimer = setTimeout(() => {
-      if (!connected) setConnecting(false);
-    }, 8000);
+    function giveUp() {
+      setConnecting(false);
+      if (failTimer) { clearTimeout(failTimer); failTimer = null; }
+      if (playInterval) { clearInterval(playInterval); playInterval = null; }
+      ws?.close();
+      ws = null;
+      if (ms.readyState === 'open') {
+        try { ms.endOfStream(); } catch { /* ignore */ }
+      }
+    }
+
+    const MAX_QUEUED_CHUNKS = 60;
+    function pushChunk(chunk: ArrayBuffer) {
+      queue.push(chunk);
+      while (queue.length > MAX_QUEUED_CHUNKS) {
+        queue.shift();
+      }
+    }
 
     function flushQueue() {
       if (!sb || sb.updating || queue.length === 0) return;
@@ -180,13 +204,19 @@ function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragE
       }
     }
 
-    ms.addEventListener('sourceopen', () => {
+    async function onSourceOpen() {
+      if (index > 0) {
+        await new Promise<void>((resolve) => {
+          staggerTimer = setTimeout(resolve, index * STREAM_START_STAGGER_MS);
+        });
+      }
+      if (cancelled) return;
+
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       ws = new WebSocket(`${proto}//${location.host}/api/cameras/${camera.name}/stream`);
       ws.binaryType = 'arraybuffer';
 
       ws.onopen = () => {
-        connected = true;
         ws!.send(JSON.stringify({ type: 'mse' }));
       };
 
@@ -198,44 +228,55 @@ function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragE
               sb = ms.addSourceBuffer(msg.value);
               sb.mode = 'segments';
               sb.addEventListener('updateend', flushQueue);
+              receivedStreamData = true;
             } catch {
-              setConnecting(false);
+              giveUp();
             }
           }
         } else if (ev.data instanceof ArrayBuffer && sb) {
+          receivedStreamData = true;
           if (sb.updating) {
-            queue.push(ev.data);
+            pushChunk(ev.data);
           } else {
             try { sb.appendBuffer(ev.data); }
-            catch { queue.push(ev.data); }
+            catch { pushChunk(ev.data); }
           }
         }
       };
 
-      ws.onerror = () => { if (!connected) setConnecting(false); };
-      ws.onclose = () => { if (!connected) setConnecting(false); };
-    });
+      ws.onerror = () => { if (!receivedStreamData) giveUp(); };
+      ws.onclose = () => { if (!receivedStreamData) giveUp(); };
 
-    const playInterval = setInterval(() => {
-      if (!video) return;
-      if (video.paused && video.readyState >= 2) {
-        video.play().catch(() => {});
-      }
-      if (video.readyState >= 2 && !liveReady) {
-        setLiveReady(true);
-        setConnecting(false);
-      }
-      if (video.buffered.length > 0) {
-        const end = video.buffered.end(video.buffered.length - 1);
-        if (end - video.currentTime > 3) {
-          video.currentTime = end - 0.5;
+      failTimer = setTimeout(() => {
+        if (!receivedStreamData) giveUp();
+      }, 8000);
+
+      playInterval = setInterval(() => {
+        if (!video) return;
+        if (video.paused && video.readyState >= 2) {
+          video.play().catch(() => {});
         }
-      }
-    }, 500);
+        if (video.readyState >= 2 && !liveReady) {
+          setLiveReady(true);
+          setConnecting(false);
+        }
+        if (video.buffered.length > 0) {
+          const end = video.buffered.end(video.buffered.length - 1);
+          if (end - video.currentTime > 3) {
+            video.currentTime = end - 0.5;
+          }
+        }
+      }, 500);
+    }
+
+    ms.addEventListener('sourceopen', onSourceOpen);
 
     return () => {
-      clearTimeout(failTimer);
-      clearInterval(playInterval);
+      cancelled = true;
+      ms.removeEventListener('sourceopen', onSourceOpen);
+      if (staggerTimer) clearTimeout(staggerTimer);
+      if (failTimer) clearTimeout(failTimer);
+      if (playInterval) clearInterval(playInterval);
       ws?.close();
       if (ms.readyState === 'open') {
         try { ms.endOfStream(); } catch { /* ignore */ }
