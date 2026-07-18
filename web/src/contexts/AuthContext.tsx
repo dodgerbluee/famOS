@@ -36,11 +36,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     api.get<AuthUser>('/api/auth/me')
       .then((u) => setUser(u))
-      .catch(() => {
+      .catch(() =>
         api.get<{ needsSetup: boolean }>('/api/setup/status')
           .then((s) => setNeedsSetup(s.needsSetup))
-          .catch(() => {});
-      })
+          .catch(() => {})
+      )
       .finally(() => setLoading(false));
   }, []);
 

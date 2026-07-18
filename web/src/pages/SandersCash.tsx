@@ -4,6 +4,7 @@ import { api, type AccountWithMember, type TransactionWithNames } from '../api/c
 import { useWebSocket } from '../hooks/useWebSocket';
 import { Leaderboard } from '../components/sanders-cash/Leaderboard';
 import { AwardModal } from '../components/sanders-cash/AwardModal';
+import { AdjustModal } from '../components/sanders-cash/AdjustModal';
 import { TransactionHistory } from '../components/sanders-cash/TransactionHistory';
 
 export function SandersCash() {
@@ -11,6 +12,7 @@ export function SandersCash() {
   const [selectedMember, setSelectedMember] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<TransactionWithNames[]>([]);
   const [showAward, setShowAward] = useState(false);
+  const [showAdjust, setShowAdjust] = useState(false);
   const navigate = useNavigate();
 
   const loadAccounts = useCallback(() => {
@@ -53,6 +55,12 @@ export function SandersCash() {
             + Award
           </button>
           <button
+            onClick={() => setShowAdjust(true)}
+            className="bg-surface-light text-text-bright text-sm font-medium px-3 py-2 min-h-[44px] rounded-xl active:scale-95 transition-transform"
+          >
+            Adjust
+          </button>
+          <button
             onClick={() => navigate('/sanders-cash/store')}
             className="text-primary-light text-sm font-medium px-3 py-2 min-h-[44px]"
           >
@@ -93,6 +101,14 @@ export function SandersCash() {
           accounts={accounts}
           onAwarded={loadAccounts}
           onClose={() => setShowAward(false)}
+        />
+      )}
+
+      {showAdjust && (
+        <AdjustModal
+          accounts={accounts}
+          onAdjusted={loadAccounts}
+          onClose={() => setShowAdjust(false)}
         />
       )}
     </div>

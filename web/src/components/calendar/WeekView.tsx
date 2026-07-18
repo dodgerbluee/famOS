@@ -114,10 +114,8 @@ export function WeekView({ startDate, events, onDateChange, onEventSelect, refer
   useEffect(() => {
     if (!autoScrollRelevant || !scrollRef.current) return;
     if (compact && referenceTime) {
-      const targetIndex = compactVisibleDays.findIndex((day) => {
-        const dayEvents = compactEventsByDay(day);
-        return dayEvents.some((event) => getEventVisualState(event, referenceTime) !== 'muted');
-      });
+      const todayKey = getDateKey(referenceTime, timezone);
+      const targetIndex = compactVisibleDays.findIndex((day) => getDateKey(day, timezone) >= todayKey);
       const index = targetIndex >= 0 ? targetIndex : 0;
       const target = dayRefs.current[index];
       if (target && scrollRef.current) {
@@ -135,7 +133,7 @@ export function WeekView({ startDate, events, onDateChange, onEventSelect, refer
 
   if (compact) {
     return (
-      <div>
+      <div className="flex flex-col h-full">
         {showHeader && (
           <div className="flex items-center justify-between mb-4">
             <button onClick={prevWeek} className="text-text-dim px-3 py-2 min-h-[48px] min-w-[48px] flex items-center justify-center text-xl">‹</button>
@@ -147,7 +145,7 @@ export function WeekView({ startDate, events, onDateChange, onEventSelect, refer
             <button onClick={nextWeek} className="text-text-dim px-3 py-2 min-h-[48px] min-w-[48px] flex items-center justify-center text-xl">›</button>
           </div>
         )}
-        <div ref={scrollRef} className="space-y-2 overflow-y-auto max-h-[22rem] pr-1">
+        <div ref={scrollRef} className="space-y-2 overflow-y-auto flex-1 min-h-0 pr-1">
           {compactVisibleDays.map((day, index) => {
             const dayEvents = compactEventsByDay(day);
             const isToday = getDateKey(day, timezone) === today;
