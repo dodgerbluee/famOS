@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../api/client';
 import type { AuthUser } from '../contexts/AuthContext';
 
 export function Setup() {
   const { setUser } = useAuth();
+  const navigate = useNavigate();
   const [familyName, setFamilyName] = useState('');
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
@@ -23,6 +25,7 @@ export function Setup() {
       await api.post('/api/setup', { familyName, name, username, password, color });
       const me = await api.get<AuthUser>('/api/auth/me');
       setUser(me);
+      navigate('/', { replace: true });
     } catch {
       setError('Setup failed. Please try again.');
     } finally {

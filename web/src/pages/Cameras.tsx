@@ -64,13 +64,15 @@ export function Cameras() {
         </div>
       </div>
 
-      {view === 'grid' ? (
-        <CameraGrid onSelect={setSelectedCamera} />
-      ) : (
-        <div className="bg-surface rounded-2xl p-4">
-          <h2 className="text-lg font-semibold text-text-bright mb-3">Recent Events</h2>
-          <EventTimeline limit={30} />
-        </div>
+      {!selectedCamera && (
+        view === 'grid' ? (
+          <CameraGrid onSelect={setSelectedCamera} />
+        ) : (
+          <div className="bg-surface rounded-2xl p-4">
+            <h2 className="text-lg font-semibold text-text-bright mb-3">Recent Events</h2>
+            <EventTimeline limit={30} />
+          </div>
+        )
       )}
 
       <AnimatePresence>
