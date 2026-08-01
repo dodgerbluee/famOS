@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { api, type AccountWithMember } from '../../api/client';
 
 interface AwardModalProps {
@@ -16,6 +16,9 @@ export function AwardModal({ accounts, onAwarded, onClose }: AwardModalProps) {
   const [customAmount, setCustomAmount] = useState('');
   const [reason, setReason] = useState('');
   const [customReason, setCustomReason] = useState('');
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [awarding, setAwarding] = useState(false);
   const [error, setError] = useState('');
 
@@ -41,12 +44,20 @@ export function AwardModal({ accounts, onAwarded, onClose }: AwardModalProps) {
     try {
       const account = accounts.find((a) => a.memberId === selectedKid);
       if (!account) return;
+
+      let photoUrl = '';
+      if (photo) {
+        const uploaded = await api.upload('/api/uploads', photo);
+        photoUrl = uploaded.url;
+      }
+
       await api.post('/api/sanders-cash/transactions', {
         accountId: account.id,
         amount: effectiveAmount,
         type: 'earn',
         reason: effectiveReason,
         awardedBy: '',
+        photoUrl,
       });
       onAwarded();
       onClose();
@@ -165,6 +176,49 @@ export function AwardModal({ accounts, onAwarded, onClose }: AwardModalProps) {
             onChange={(e) => setCustomReason(e.target.value)}
             className="w-full mt-2 bg-surface-light text-text-bright rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
           />
+        </div>
+
+        <div>
+          <label className="block text-sm text-text-dim mb-2">Photo (optional)</label>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) {
+                setPhoto(f);
+                setPhotoPreview(URL.createObjectURL(f));
+              }
+            }}
+          />
+          {photoPreview ? (
+            <div className="relative inline-block">
+              <img src={photoPreview} alt="Preview" className="w-24 h-24 object-cover rounded-xl" />
+              <button
+                type="button"
+                onClick={() => { setPhoto(null); setPhotoPreview(null); if (fileRef.current) fileRef.current.value = ''; }}
+                className="absolute -top-2 -right-2 w-6 h-6 bg-accent-red text-white rounded-full text-xs flex items-center justify-center"
+              >
+                ×
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="flex items-center gap-2 px-4 py-3 bg-surface-light rounded-xl text-text-dim text-sm min-h-[48px]"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
+              Add Photo
+            </button>
+          )}
         </div>
 
         {error && <p className="text-accent-red text-sm">{error}</p>}

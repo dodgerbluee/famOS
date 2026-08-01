@@ -113,7 +113,7 @@ func (s *RewardsService) DeleteReward(id string) error {
 	return err
 }
 
-func (s *RewardsService) RequestRedemption(rewardID, memberID string) (*Redemption, error) {
+func (s *RewardsService) RequestRedemption(rewardID, memberID, photoURL string) (*Redemption, error) {
 	var cost int
 	err := s.db.QueryRow(`SELECT cost FROM rewards WHERE id = ? AND active = TRUE`, rewardID).Scan(&cost)
 	if err != nil {
@@ -131,9 +131,9 @@ func (s *RewardsService) RequestRedemption(rewardID, memberID string) (*Redempti
 
 	id := uuid.New().String()
 	_, err = s.db.Exec(`
-		INSERT INTO redemptions (id, reward_id, member_id, status)
-		VALUES (?, ?, ?, 'pending')
-	`, id, rewardID, memberID)
+		INSERT INTO redemptions (id, reward_id, member_id, status, photo_url)
+		VALUES (?, ?, ?, 'pending', ?)
+	`, id, rewardID, memberID, photoURL)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +174,10 @@ func (s *RewardsService) ResolveRedemption(redemptionID, resolvedBy, status stri
 		var rewardName string
 		s.db.QueryRow(`SELECT name FROM rewards WHERE id = ?`, rewardID).Scan(&rewardName)
 
-		_, err = s.cash.CreateTransaction(account.ID, cost, "spend", "Redeemed: "+rewardName, resolvedBy)
+		var redemptionPhoto string
+		s.db.QueryRow(`SELECT COALESCE(photo_url, '') FROM redemptions WHERE id = ?`, redemptionID).Scan(&redemptionPhoto)
+
+		_, err = s.cash.CreateTransaction(account.ID, cost, "spend", "Redeemed: "+rewardName, resolvedBy, redemptionPhoto)
 		if err != nil {
 			return err
 		}

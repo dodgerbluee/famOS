@@ -33,6 +33,21 @@ export const api = {
 
   delete: <T>(path: string) =>
     request<T>(path, { method: 'DELETE' }),
+
+  upload: async (path: string, file: File, fieldName = 'photo'): Promise<{ url: string }> => {
+    const form = new FormData();
+    form.append(fieldName, file);
+    const res = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      body: form,
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(body.error || res.statusText);
+    }
+    return res.json();
+  },
 };
 
 export interface FamilyMember {
@@ -76,6 +91,7 @@ export interface TransactionWithNames {
   type: string;
   reason: string;
   awardedBy: string;
+  photoUrl: string;
   createdAt: string;
   awardedByName: string;
 }

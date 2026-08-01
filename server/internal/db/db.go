@@ -38,6 +38,10 @@ func (d *DB) Migrate() error {
 		return err
 	}
 
+	// Sanders Cash photo migrations
+	addColumnIfNotExists(d, "sanders_cash_transactions", "photo_url", "TEXT DEFAULT ''")
+	addColumnIfNotExists(d, "redemptions", "photo_url", "TEXT DEFAULT ''")
+
 	// Calendar column migrations (existing)
 	addColumnIfNotExists(d, "calendar_sources", "calendar_name", "TEXT DEFAULT ''")
 	addColumnIfNotExists(d, "calendar_events", "calendar_name", "TEXT DEFAULT ''")
