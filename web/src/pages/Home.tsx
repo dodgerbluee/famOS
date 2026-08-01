@@ -22,6 +22,7 @@ import {
 } from '../lib/gridLayout';
 import { eventSpansDate } from '../lib/calendar';
 import { addDaysInTimezone, addMonthsInTimezone, endOfMonthInTimezone, formatDate, formatTime, getDateKey, getHour, startOfMonthInTimezone, startOfWeekInTimezone, useTimezone } from '../lib/timezone';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 interface CardDef {
   id: string;
@@ -42,6 +43,11 @@ interface CardDef {
   { id: 'weather', label: 'Weather', icon: '☀' },
 ];
 
+const MOBILE_CARD_ORDER = [
+  'briefing', 'day-calendar', 'sanders-cash', 'chores', 'weather',
+  'week-calendar', 'month-calendar', 'tasks', 'services', 'media',
+];
+
 export function Home() {
   const [accounts, setAccounts] = useState<AccountWithMember[]>([]);
   const [scheduleEvents, setScheduleEvents] = useState<CalendarEvent[]>([]);
@@ -56,6 +62,7 @@ export function Home() {
   const [mediaPending, setMediaPending] = useState(0);
   const gridRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const timezone = useTimezone();
 
   const viewDay = addDaysInTimezone(now, dayOffset, timezone);
@@ -208,7 +215,7 @@ export function Home() {
       case 'briefing':
         return (
           <div className="flex flex-col h-full">
-            <div className="flex items-baseline gap-3 mb-2">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-2">
               <h2 className="text-lg font-semibold text-text-bright">{greeting}</h2>
               <span className="text-text-bright text-sm font-semibold">
                 {formatDate(now, timezone, { weekday: 'short', month: 'short', day: 'numeric' })}
@@ -322,10 +329,12 @@ export function Home() {
     return undefined;
   };
 
+  const mobileCards = MOBILE_CARD_ORDER.filter((id) => layout.cards.some((c) => c.id === id));
+
   return (
     <div className="flex flex-col h-full -m-4">
-      {/* Edit banner */}
-      {editing && (
+      {/* Edit banner — desktop only */}
+      {!isMobile && editing && (
         <div className="mx-4 mb-2 bg-primary-light/10 border border-primary-light/20 rounded-xl px-4 py-2.5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-4">
             <div className="text-sm text-text-bright">
@@ -354,53 +363,67 @@ export function Home() {
         </div>
       )}
 
-      {/* Grid */}
-      <div className={`flex-1 px-4 pt-4 ${layout.mode === 'scroll' ? 'overflow-y-auto pb-4' : 'overflow-hidden'}`}>
-        <DashboardGrid layout={layout} editing={editing} containerRef={gridRef}>
-          {layout.cards.map((card) => {
-            const def = CARD_DEFS.find((d) => d.id === card.id);
-            if (!def) return null;
-            return (
-              <GridCard
-                key={card.id}
-                card={card}
-                label={def.label}
-                editing={editing}
-                allCards={layout.cards}
-                containerRef={gridRef}
-                gridMode={layout.mode}
-                totalRows={layout.totalRows}
-                pulseColor={cardPulse(card.id)}
-                onMove={handleMove}
-                onSwap={handleSwap}
-                onResize={handleResize}
-                onRemove={handleRemove}
-              >
-                {renderCard(card.id)}
-              </GridCard>
-            );
-          })}
-        </DashboardGrid>
-
-        {/* Add card */}
-        {editing && hiddenCards.length > 0 && (
-          <div className="bg-surface rounded-2xl p-4 mt-4">
-            <p className="text-text-dim text-xs font-medium uppercase tracking-wide mb-2">Add card</p>
-            <div className="flex flex-wrap gap-2">
-              {hiddenCards.map((def) => (
-                <button
-                  key={def.id}
-                  onClick={() => handleAdd(def.id)}
-                  className="flex items-center gap-1.5 bg-surface-light hover:bg-surface-lighter text-text-dim hover:text-text-bright px-3 py-1.5 rounded-lg text-sm transition-colors"
-                >
-                  <span>{def.icon}</span>
-                  <span>{def.label}</span>
-                </button>
-              ))}
-            </div>
+      {isMobile ? (
+        <div className="flex-1 px-4 pt-4 pb-4 overflow-y-auto">
+          <div className="flex flex-col gap-4">
+            {mobileCards.map((cardId) => (
+              <div key={cardId} className="bg-surface-light rounded-2xl border border-surface-lighter p-3">
+                {renderCard(cardId)}
+              </div>
+            ))}
           </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <>
+          {/* Grid */}
+          <div className={`flex-1 px-4 pt-4 ${layout.mode === 'scroll' ? 'overflow-y-auto pb-4' : 'overflow-hidden'}`}>
+            <DashboardGrid layout={layout} editing={editing} containerRef={gridRef}>
+              {layout.cards.map((card) => {
+                const def = CARD_DEFS.find((d) => d.id === card.id);
+                if (!def) return null;
+                return (
+                  <GridCard
+                    key={card.id}
+                    card={card}
+                    label={def.label}
+                    editing={editing}
+                    allCards={layout.cards}
+                    containerRef={gridRef}
+                    gridMode={layout.mode}
+                    totalRows={layout.totalRows}
+                    pulseColor={cardPulse(card.id)}
+                    onMove={handleMove}
+                    onSwap={handleSwap}
+                    onResize={handleResize}
+                    onRemove={handleRemove}
+                  >
+                    {renderCard(card.id)}
+                  </GridCard>
+                );
+              })}
+            </DashboardGrid>
+
+            {/* Add card */}
+            {editing && hiddenCards.length > 0 && (
+              <div className="bg-surface rounded-2xl p-4 mt-4">
+                <p className="text-text-dim text-xs font-medium uppercase tracking-wide mb-2">Add card</p>
+                <div className="flex flex-wrap gap-2">
+                  {hiddenCards.map((def) => (
+                    <button
+                      key={def.id}
+                      onClick={() => handleAdd(def.id)}
+                      className="flex items-center gap-1.5 bg-surface-light hover:bg-surface-lighter text-text-dim hover:text-text-bright px-3 py-1.5 rounded-lg text-sm transition-colors"
+                    >
+                      <span>{def.icon}</span>
+                      <span>{def.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
