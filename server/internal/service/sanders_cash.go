@@ -35,6 +35,7 @@ type Transaction struct {
 	Type      string `json:"type"`
 	Reason    string `json:"reason"`
 	AwardedBy string `json:"awardedBy"`
+	PhotoURL  string `json:"photoUrl"`
 	CreatedAt string `json:"createdAt"`
 }
 
@@ -81,7 +82,7 @@ func (s *SandersCashService) GetAccount(memberID string) (*AccountWithMember, er
 	return &a, nil
 }
 
-func (s *SandersCashService) CreateTransaction(accountID string, amount int, txType, reason, awardedBy string) (*Transaction, error) {
+func (s *SandersCashService) CreateTransaction(accountID string, amount int, txType, reason, awardedBy, photoURL string) (*Transaction, error) {
 	if txType == "spend" && amount > 0 {
 		amount = -amount
 	}
@@ -107,9 +108,9 @@ func (s *SandersCashService) CreateTransaction(accountID string, amount int, txT
 	awardedByVal := sql.NullString{String: awardedBy, Valid: awardedBy != ""}
 
 	_, err = tx.Exec(`
-		INSERT INTO sanders_cash_transactions (id, account_id, amount, type, reason, awarded_by)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, id, accountID, amount, txType, reason, awardedByVal)
+		INSERT INTO sanders_cash_transactions (id, account_id, amount, type, reason, awarded_by, photo_url)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, id, accountID, amount, txType, reason, awardedByVal, photoURL)
 	if err != nil {
 		return nil, err
 	}
@@ -125,9 +126,9 @@ func (s *SandersCashService) CreateTransaction(accountID string, amount int, txT
 
 	var t Transaction
 	err = s.db.QueryRow(`
-		SELECT id, account_id, amount, type, reason, COALESCE(awarded_by, ''), created_at
+		SELECT id, account_id, amount, type, reason, COALESCE(awarded_by, ''), COALESCE(photo_url, ''), created_at
 		FROM sanders_cash_transactions WHERE id = ?
-	`, id).Scan(&t.ID, &t.AccountID, &t.Amount, &t.Type, &t.Reason, &t.AwardedBy, &t.CreatedAt)
+	`, id).Scan(&t.ID, &t.AccountID, &t.Amount, &t.Type, &t.Reason, &t.AwardedBy, &t.PhotoURL, &t.CreatedAt)
 
 	return &t, err
 }
@@ -137,7 +138,7 @@ func (s *SandersCashService) GetTransactions(accountID string, limit int) ([]Tra
 		limit = 50
 	}
 	rows, err := s.db.Query(`
-		SELECT t.id, t.account_id, t.amount, t.type, t.reason, COALESCE(t.awarded_by, ''), t.created_at,
+		SELECT t.id, t.account_id, t.amount, t.type, t.reason, COALESCE(t.awarded_by, ''), COALESCE(t.photo_url, ''), t.created_at,
 		       COALESCE(m.name, '')
 		FROM sanders_cash_transactions t
 		LEFT JOIN family_members m ON m.id = t.awarded_by
@@ -153,7 +154,7 @@ func (s *SandersCashService) GetTransactions(accountID string, limit int) ([]Tra
 	var txns []TransactionWithNames
 	for rows.Next() {
 		var t TransactionWithNames
-		if err := rows.Scan(&t.ID, &t.AccountID, &t.Amount, &t.Type, &t.Reason, &t.AwardedBy, &t.CreatedAt, &t.AwardedByName); err != nil {
+		if err := rows.Scan(&t.ID, &t.AccountID, &t.Amount, &t.Type, &t.Reason, &t.AwardedBy, &t.PhotoURL, &t.CreatedAt, &t.AwardedByName); err != nil {
 			return nil, err
 		}
 		txns = append(txns, t)

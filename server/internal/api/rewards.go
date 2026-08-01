@@ -92,13 +92,14 @@ func (h *RewardsHandler) RequestRedemption(w http.ResponseWriter, r *http.Reques
 	var req struct {
 		RewardID string `json:"rewardId"`
 		MemberID string `json:"memberId"`
+		PhotoURL string `json:"photoUrl"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	redemption, err := h.svc.RequestRedemption(req.RewardID, req.MemberID)
+	redemption, err := h.svc.RequestRedemption(req.RewardID, req.MemberID, req.PhotoURL)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

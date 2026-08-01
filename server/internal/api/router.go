@@ -80,6 +80,7 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 	batchHandler := NewBatchHandler(batchSvc, scheduler)
 	vikunjaHandler := NewVikunjaHandler(service.NewVikunjaService(database))
 	choresHandler := NewChoresHandler(service.NewChoresService(database, svc.Cash), hub)
+	uploadsHandler := NewUploadsHandler(filepath.Dir(cfg.DatabasePath))
 	immichHandler := NewImmichHandler(service.NewImmichService(database))
 
 	// Middleware
@@ -143,6 +144,8 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 
 		r.Get("/api/immich/album", immichHandler.GetAlbum)
 		r.Get("/api/immich/assets/{id}", immichHandler.ProxyAsset)
+
+		r.Get("/api/uploads/{filename}", uploadsHandler.Serve)
 
 		r.Get("/api/settings", settingsHandler.Get)
 
@@ -208,6 +211,9 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 		// Batch
 		r.With(auth.RequirePermission("settings.view")).Get("/api/batch/runs", batchHandler.ListRuns)
 		r.With(auth.RequirePermission("settings.edit")).Post("/api/batch/trigger/briefing", batchHandler.TriggerBriefing)
+
+		// Uploads
+		r.Post("/api/uploads", uploadsHandler.Upload)
 
 		// Immich test
 		r.With(auth.RequirePermission("settings.edit")).Post("/api/immich/test", immichHandler.Test)

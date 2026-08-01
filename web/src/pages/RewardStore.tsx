@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { api, type AccountWithMember, type Reward } from '../api/client';
 import { RewardCard } from '../components/sanders-cash/RewardCard';
 
@@ -21,6 +21,11 @@ export function RewardStore() {
   const [pendingRedemptions, setPendingRedemptions] = useState<RedemptionWithDetails[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [newReward, setNewReward] = useState({ name: '', description: '', cost: '', category: '' });
+  const [redeemingReward, setRedeemingReward] = useState<Reward | null>(null);
+  const [redeemPhoto, setRedeemPhoto] = useState<File | null>(null);
+  const [redeemPhotoPreview, setRedeemPhotoPreview] = useState<string | null>(null);
+  const [redeeming, setRedeeming] = useState(false);
+  const redeemFileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
     api.get<Reward[]>('/api/rewards?active=true').then(setRewards).catch(() => {});
@@ -32,10 +37,35 @@ export function RewardStore() {
 
   const selectedAccount = accounts.find((a) => a.memberId === selectedKid);
 
-  const handleRedeem = async (rewardId: string) => {
+  const handleRedeemClick = (rewardId: string) => {
     if (!selectedKid) return;
-    await api.post('/api/rewards/redeem', { rewardId, memberId: selectedKid });
-    load();
+    const reward = rewards.find((r) => r.id === rewardId);
+    if (reward) setRedeemingReward(reward);
+  };
+
+  const handleRedeemConfirm = async () => {
+    if (!selectedKid || !redeemingReward) return;
+    setRedeeming(true);
+    try {
+      let photoUrl = '';
+      if (redeemPhoto) {
+        const uploaded = await api.upload('/api/uploads', redeemPhoto);
+        photoUrl = uploaded.url;
+      }
+      await api.post('/api/rewards/redeem', { rewardId: redeemingReward.id, memberId: selectedKid, photoUrl });
+      setRedeemingReward(null);
+      setRedeemPhoto(null);
+      setRedeemPhotoPreview(null);
+      load();
+    } finally {
+      setRedeeming(false);
+    }
+  };
+
+  const closeRedeemModal = () => {
+    setRedeemingReward(null);
+    setRedeemPhoto(null);
+    setRedeemPhotoPreview(null);
   };
 
   const handleResolve = async (redemptionId: string, status: string) => {
@@ -192,7 +222,7 @@ export function RewardStore() {
             key={reward.id}
             reward={reward}
             balance={selectedAccount?.balance ?? 0}
-            onRedeem={handleRedeem}
+            onRedeem={handleRedeemClick}
           />
         ))}
       </div>
@@ -200,6 +230,73 @@ export function RewardStore() {
       {rewards.length === 0 && (
         <div className="bg-surface rounded-2xl p-6 text-center">
           <p className="text-text-dim">No rewards yet — add some above!</p>
+        </div>
+      )}
+
+      {redeemingReward && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-surface rounded-2xl w-full max-w-sm p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-text-bright">Redeem Reward</h2>
+              <button onClick={closeRedeemModal} className="text-text-dim text-2xl leading-none p-2 -mr-2 -mt-2 min-w-[44px] min-h-[44px] flex items-center justify-center">×</button>
+            </div>
+
+            <p className="text-text-bright">
+              <strong>{redeemingReward.name}</strong> for <span className="text-accent-yellow font-bold">${(redeemingReward.cost / 100).toFixed(2)}</span>
+            </p>
+
+            <div>
+              <label className="block text-sm text-text-dim mb-2">Photo (optional)</label>
+              <input
+                ref={redeemFileRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) {
+                    setRedeemPhoto(f);
+                    setRedeemPhotoPreview(URL.createObjectURL(f));
+                  }
+                }}
+              />
+              {redeemPhotoPreview ? (
+                <div className="relative inline-block">
+                  <img src={redeemPhotoPreview} alt="Preview" className="w-24 h-24 object-cover rounded-xl" />
+                  <button
+                    type="button"
+                    onClick={() => { setRedeemPhoto(null); setRedeemPhotoPreview(null); if (redeemFileRef.current) redeemFileRef.current.value = ''; }}
+                    className="absolute -top-2 -right-2 w-6 h-6 bg-accent-red text-white rounded-full text-xs flex items-center justify-center"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => redeemFileRef.current?.click()}
+                  className="flex items-center gap-2 px-4 py-3 bg-surface-light rounded-xl text-text-dim text-sm min-h-[48px]"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                  Add Photo
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleRedeemConfirm}
+              disabled={redeeming}
+              className="w-full bg-primary text-white font-bold py-3 rounded-xl min-h-[48px] active:scale-95 transition-transform disabled:opacity-50"
+            >
+              {redeeming ? 'Redeeming...' : 'Confirm Redemption'}
+            </button>
+          </div>
         </div>
       )}
     </div>
