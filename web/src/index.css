@@ -31,8 +31,13 @@ html, body, #root {
   overflow: hidden;
 }
 
-* {
+*:not(select):not(option) {
   -webkit-touch-callout: none;
+}
+
+select, input, textarea {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 ::-webkit-scrollbar {
