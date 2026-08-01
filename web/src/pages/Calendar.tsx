@@ -18,7 +18,9 @@ interface SyncResult {
 
 export function Calendar() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [viewMode, setViewMode] = useState<ViewMode>('month');
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    window.matchMedia('(min-width: 768px)').matches ? 'month' : 'day'
+  );
   const [currentDate, setCurrentDate] = useState(new Date());
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{ results: SyncResult[]; show: boolean } | null>(null);
@@ -102,7 +104,7 @@ export function Calendar() {
   return (
     <div className="flex flex-col h-full -m-4 p-4 overflow-hidden">
       {/* Header bar */}
-      <div className="flex items-center justify-between mb-3 shrink-0">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-3 shrink-0">
         {/* Left: nav arrows + heading + today */}
         <div className="flex items-center gap-2">
           <button
@@ -134,7 +136,7 @@ export function Calendar() {
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold capitalize transition-all ${
+                className={`px-2 md:px-3 py-1.5 rounded-md text-xs font-semibold capitalize transition-all ${
                   viewMode === mode
                     ? 'bg-surface-light text-text-bright shadow-sm'
                     : 'text-text-dim hover:text-text-bright'
@@ -145,7 +147,7 @@ export function Calendar() {
             ))}
           </div>
 
-          <div className="w-px h-5 bg-surface-lighter mx-1" />
+          <div className="hidden md:block w-px h-5 bg-surface-lighter mx-1" />
 
           {/* Sync */}
           <button
@@ -166,7 +168,7 @@ export function Calendar() {
             className="h-8 flex items-center gap-1.5 bg-primary hover:bg-primary-dark text-white text-xs font-semibold px-3 rounded-lg transition-colors"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-            Event
+            <span className="hidden md:inline">Event</span>
           </button>
         </div>
       </div>

@@ -24,14 +24,14 @@ export function Shell() {
         setMenuOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener('pointerdown', handleClick);
+    return () => document.removeEventListener('pointerdown', handleClick);
   }, [menuOpen]);
 
   return (
     <div className="flex flex-col h-full">
       {user && (
-        <header className="sticky top-4 z-50 px-4 flex justify-center mb-2">
+        <header className="sticky top-2 md:top-4 z-50 px-2 md:px-4 flex justify-center mb-2">
           <div className="w-full h-[45px] bg-surface rounded-2xl border border-surface-lighter shadow-lg px-5 flex items-center justify-between">
             <span className="text-lg font-bold text-text-bright tracking-tight">famOS</span>
 
@@ -83,7 +83,7 @@ export function Shell() {
               {isHome && (
                 <button
                   onClick={() => setEditing((e) => !e)}
-                  className={`w-8 h-8 flex items-center justify-center rounded-full transition-colors ${
+                  className={`w-8 h-8 hidden md:flex items-center justify-center rounded-full transition-colors ${
                     editing ? 'bg-primary-light text-surface' : 'text-text-dim hover:text-text-bright hover:bg-surface-lighter'
                   }`}
                   title="Edit layout"
@@ -97,8 +97,8 @@ export function Shell() {
           </div>
         </header>
       )}
-      <main className="flex-1 overflow-hidden px-4 pb-4 pt-4">
-        <div className="h-full overflow-y-auto bg-surface rounded-2xl border border-surface-lighter p-4">
+      <main className="flex-1 overflow-hidden px-2 pb-2 pt-2 md:px-4 md:pb-4 md:pt-4">
+        <div className="h-full overflow-y-auto bg-surface rounded-2xl border border-surface-lighter p-2 md:p-4">
           <Outlet context={{ editing, setEditing } satisfies ShellContext} />
         </div>
       </main>

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { api, type Camera } from '../../api/client';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 interface CameraGridProps {
   onSelect?: (camera: Camera) => void;
@@ -20,6 +21,7 @@ export function CameraGrid({ onSelect }: CameraGridProps) {
   const [cameraFitModes, setCameraFitModes] = useState<Record<string, 'cover' | 'contain'>>({});
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
+  const isMobile = useIsMobile();
 
   const load = useCallback(() => {
     Promise.all([
@@ -131,6 +133,7 @@ export function CameraGrid({ onSelect }: CameraGridProps) {
           onDragEnter={handleDragEnter}
           onDragEnd={handleDragEnd}
           fitMode={cameraFitModes[cam.name] || 'cover'}
+          disableDrag={isMobile}
         />
       ))}
     </div>
@@ -145,9 +148,10 @@ interface CameraTileProps {
   onDragEnter: (index: number) => void;
   onDragEnd: () => void;
   fitMode: 'cover' | 'contain';
+  disableDrag?: boolean;
 }
 
-function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragEnd, fitMode }: CameraTileProps) {
+function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragEnd, fitMode, disableDrag }: CameraTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [liveReady, setLiveReady] = useState(false);
   const [connecting, setConnecting] = useState(true);
@@ -287,11 +291,11 @@ function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragE
 
   return (
     <div
-      draggable
-      onDragStart={() => onDragStart(index)}
-      onDragEnter={() => onDragEnter(index)}
-      onDragEnd={onDragEnd}
-      onDragOver={(e) => e.preventDefault()}
+      draggable={!disableDrag}
+      onDragStart={disableDrag ? undefined : () => onDragStart(index)}
+      onDragEnter={disableDrag ? undefined : () => onDragEnter(index)}
+      onDragEnd={disableDrag ? undefined : onDragEnd}
+      onDragOver={disableDrag ? undefined : (e) => e.preventDefault()}
       className="relative rounded-2xl bg-surface-light cursor-pointer active:scale-[0.98] transition-transform"
       style={{ overflow: 'clip' }}
       onClick={() => onSelect?.(camera)}

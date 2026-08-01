@@ -143,7 +143,7 @@ function ChoreRow({
         </div>
 
         {/* Completion toggles per kid */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {kids.map((kid) => {
             const done = isCompletedBy(chore, kid.id);
             return (
@@ -285,7 +285,7 @@ function ChoreForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="text-text-dim text-xs uppercase tracking-wide block mb-1">Frequency</label>
           <select

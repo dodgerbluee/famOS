@@ -178,28 +178,28 @@ export function Screensaver() {
         </button>
       ) : null}
 
-      <div className="absolute bottom-8 left-8 text-white/80">
-        <div className="text-[6rem] leading-none font-light">{clock}</div>
-        <div className="text-3xl font-light text-white/50 mt-2">{clockDate}</div>
+      <div className="absolute bottom-4 left-4 md:bottom-8 md:left-8 text-white/80">
+        <div className="text-[3rem] md:text-[6rem] leading-none font-light">{clock}</div>
+        <div className="text-xl md:text-3xl font-light text-white/50 mt-2">{clockDate}</div>
       </div>
 
       <button
         type="button"
         onClick={() => { void goPrevious(); }}
-        className="absolute left-6 top-1/2 -translate-y-1/2 rounded-full bg-black/40 px-4 py-3 text-3xl text-white/75 transition hover:bg-black/55 hover:text-white"
+        className="absolute left-3 md:left-6 top-1/2 -translate-y-1/2 rounded-full bg-black/40 px-3 py-2 md:px-4 md:py-3 text-2xl md:text-3xl text-white/75 transition hover:bg-black/55 hover:text-white"
       >
         ‹
       </button>
       <button
         type="button"
         onClick={() => { void goNext(); }}
-        className="absolute right-6 top-1/2 -translate-y-1/2 rounded-full bg-black/40 px-4 py-3 text-3xl text-white/75 transition hover:bg-black/55 hover:text-white"
+        className="absolute right-3 md:right-6 top-1/2 -translate-y-1/2 rounded-full bg-black/40 px-3 py-2 md:px-4 md:py-3 text-2xl md:text-3xl text-white/75 transition hover:bg-black/55 hover:text-white"
       >
         ›
       </button>
 
       {/* Info button + photo date */}
-      <div className="absolute bottom-8 right-8 flex items-center gap-3">
+      <div className="absolute bottom-4 right-4 md:bottom-8 md:right-8 flex items-center gap-3">
         {showInfo && currentPhoto?.createdAt && (
           <div className="bg-black/50 backdrop-blur-sm rounded-xl px-4 py-2 text-white/80 text-sm">
             {new Date(currentPhoto.createdAt).toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
