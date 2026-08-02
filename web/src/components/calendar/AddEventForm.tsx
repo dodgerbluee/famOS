@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, type CalendarEvent, type CalendarSource, type RemoteCalendar } from '../../api/client';
 import { getDateKey, useTimezone } from '../../lib/timezone';
 
@@ -7,6 +7,71 @@ interface AddEventFormProps {
   sources: CalendarSource[];
   onCreated: (event: CalendarEvent) => void;
   onCancel: () => void;
+}
+
+interface DropdownOption {
+  value: string;
+  label: string;
+}
+
+function Dropdown({ value, options, onChange, disabled, placeholder }: {
+  value: string;
+  options: DropdownOption[];
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', handler);
+    return () => document.removeEventListener('pointerdown', handler);
+  }, [open]);
+
+  const selected = options.find((o) => o.value === value);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setOpen(!open)}
+        className={`w-full text-left bg-surface-light rounded-xl px-4 py-3 pr-11 outline-none focus:ring-2 focus:ring-primary border border-transparent focus:border-primary/40 disabled:opacity-50 ${
+          selected ? 'text-text-bright' : 'text-text-dim'
+        }`}
+      >
+        {selected?.label || placeholder || 'Select...'}
+      </button>
+      <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-text-dim">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
+      {open && options.length > 0 && (
+        <div className="absolute z-50 mt-1 w-full rounded-xl bg-surface-lighter border border-surface-lighter shadow-lg overflow-hidden max-h-48 overflow-y-auto">
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+              className={`w-full text-left px-4 py-3 text-sm transition-colors ${
+                opt.value === value
+                  ? 'bg-primary/20 text-text-bright'
+                  : 'text-text-bright hover:bg-surface-light'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function AddEventForm({ defaultDate, sources, onCreated, onCancel }: AddEventFormProps) {
@@ -105,6 +170,9 @@ export function AddEventForm({ defaultDate, sources, onCreated, onCancel }: AddE
     }
   };
 
+  const sourceOptions: DropdownOption[] = writableSources.map((s) => ({ value: s.id, label: s.name }));
+  const calendarOptions: DropdownOption[] = remoteCalendars.map((c) => ({ value: c.name, label: c.name }));
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
       <form
@@ -127,44 +195,24 @@ export function AddEventForm({ defaultDate, sources, onCreated, onCancel }: AddE
 
         <div>
           <label className="block text-sm text-text-dim mb-1">Calendar</label>
-          <div className="relative">
-            <select
-              value={sourceId}
-              onChange={(e) => setSourceId(e.target.value)}
-              className="w-full appearance-none bg-surface-light text-text-bright rounded-xl px-4 py-3 pr-11 outline-none focus:ring-2 focus:ring-primary border border-transparent focus:border-primary/40"
-            >
-              {writableSources.map((source) => (
-                <option key={source.id} value={source.id}>{source.name}</option>
-              ))}
-            </select>
-            <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-text-dim">
-              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </span>
-          </div>
+          <Dropdown
+            value={sourceId}
+            options={sourceOptions}
+            onChange={setSourceId}
+            placeholder="Select calendar..."
+          />
         </div>
 
         {sourceId && (
           <div>
             <label className="block text-sm text-text-dim mb-1">Calendar Option</label>
-            <div className="relative">
-              <select
-                value={selectedCalendarName}
-                onChange={(e) => setSelectedCalendarName(e.target.value)}
-                disabled={loadingCalendars || remoteCalendars.length === 0}
-                className="w-full appearance-none bg-surface-light text-text-bright rounded-xl px-4 py-3 pr-11 outline-none focus:ring-2 focus:ring-primary border border-transparent focus:border-primary/40 disabled:opacity-50"
-              >
-                {remoteCalendars.map((calendar) => (
-                  <option key={calendar.path} value={calendar.name}>{calendar.name}</option>
-                ))}
-              </select>
-              <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-text-dim">
-                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                  <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </span>
-            </div>
+            <Dropdown
+              value={selectedCalendarName}
+              options={calendarOptions}
+              onChange={setSelectedCalendarName}
+              disabled={loadingCalendars || remoteCalendars.length === 0}
+              placeholder={loadingCalendars ? 'Loading...' : 'Select...'}
+            />
             <p className="text-text-dim text-xs mt-1">
               {loadingCalendars
                 ? 'Loading remote calendars...'
