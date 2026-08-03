@@ -18,18 +18,18 @@ interface AwardModalProps {
   accounts: AccountWithMember[];
   onAwarded: () => void;
   onClose: () => void;
+  defaultDirection?: 'earn' | 'subtract';
 }
 
-export function AwardModal({ accounts, onAwarded, onClose }: AwardModalProps) {
+export function AwardModal({ accounts, onAwarded, onClose, defaultDirection = 'earn' }: AwardModalProps) {
   const [selectedKid, setSelectedKid] = useState<string | null>(accounts.length === 1 ? accounts[0].memberId : null);
-  const [direction, setDirection] = useState<'earn' | 'subtract'>('earn');
+  const [direction, setDirection] = useState<'earn' | 'subtract'>(defaultDirection);
   const [selectedPreset, setSelectedPreset] = useState<RewardPreset | null>(null);
   const [customAmount, setCustomAmount] = useState('');
   const [detail, setDetail] = useState('');
   const [customReason, setCustomReason] = useState('');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [photo, setPhoto] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<{ file: File; preview: string }[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -62,10 +62,10 @@ export function AwardModal({ accounts, onAwarded, onClose }: AwardModalProps) {
       const account = accounts.find((a) => a.memberId === selectedKid);
       if (!account) return;
 
-      let photoUrl = '';
-      if (photo) {
-        const uploaded = await api.upload('/api/uploads', photo);
-        photoUrl = uploaded.url;
+      const photoUrls: string[] = [];
+      for (const p of photos) {
+        const uploaded = await api.upload('/api/uploads', p.file);
+        photoUrls.push(uploaded.url);
       }
 
       const today = new Date().toISOString().slice(0, 10);
@@ -76,7 +76,7 @@ export function AwardModal({ accounts, onAwarded, onClose }: AwardModalProps) {
         type: direction === 'subtract' ? 'adjust' : 'earn',
         reason: effectiveReason,
         awardedBy: '',
-        photoUrl,
+        photoUrls,
         date: date !== today ? date : '',
       });
       onAwarded();
@@ -250,10 +250,10 @@ export function AwardModal({ accounts, onAwarded, onClose }: AwardModalProps) {
           />
         </div>
 
-        {/* Photo */}
+        {/* Photos */}
         {direction === 'earn' && (
           <div>
-            <label className="block text-sm text-text-dim mb-2">Photo (optional)</label>
+            <label className="block text-sm text-text-dim mb-2">Photos (optional)</label>
             <input
               ref={fileRef}
               type="file"
@@ -263,36 +263,37 @@ export function AwardModal({ accounts, onAwarded, onClose }: AwardModalProps) {
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) {
-                  setPhoto(f);
-                  setPhotoPreview(URL.createObjectURL(f));
+                  setPhotos([...photos, { file: f, preview: URL.createObjectURL(f) }]);
                 }
+                if (fileRef.current) fileRef.current.value = '';
               }}
             />
-            {photoPreview ? (
-              <div className="relative inline-block">
-                <img src={photoPreview} alt="Preview" className="w-24 h-24 object-cover rounded-xl" />
-                <button
-                  type="button"
-                  onClick={() => { setPhoto(null); setPhotoPreview(null); if (fileRef.current) fileRef.current.value = ''; }}
-                  className="absolute -top-2 -right-2 w-6 h-6 bg-accent-red text-white rounded-full text-xs flex items-center justify-center"
-                >
-                  ×
-                </button>
-              </div>
-            ) : (
+            <div className="flex gap-2 flex-wrap">
+              {photos.map((p, i) => (
+                <div key={i} className="relative group">
+                  <img src={p.preview} alt="Preview" className="w-20 h-20 object-cover rounded-xl" />
+                  <button
+                    type="button"
+                    onClick={() => setPhotos(photos.filter((_, idx) => idx !== i))}
+                    className="absolute -top-1.5 -right-1.5 w-6 h-6 bg-surface-lighter border border-surface-lighter text-text-dim rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-light hover:text-text-bright"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
-                className="flex items-center gap-2 px-4 py-3 bg-surface-light rounded-xl text-text-dim text-sm min-h-[48px]"
+                className="w-20 h-20 flex flex-col items-center justify-center gap-1 bg-surface-light rounded-xl text-text-dim text-xs hover:bg-surface-lighter transition-colors"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="3" width="18" height="18" rx="2" />
                   <circle cx="8.5" cy="8.5" r="1.5" />
                   <polyline points="21 15 16 10 5 21" />
                 </svg>
-                Add Photo
+                Add
               </button>
-            )}
+            </div>
           </div>
         )}
 

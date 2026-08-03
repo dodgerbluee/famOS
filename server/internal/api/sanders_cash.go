@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -41,13 +42,14 @@ func (h *SandersCashHandler) GetAccount(w http.ResponseWriter, r *http.Request) 
 
 func (h *SandersCashHandler) CreateTransaction(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		AccountID string `json:"accountId"`
-		Amount    int    `json:"amount"`
-		Type      string `json:"type"`
-		Reason    string `json:"reason"`
-		AwardedBy string `json:"awardedBy"`
-		PhotoURL  string `json:"photoUrl"`
-		Date      string `json:"date"`
+		AccountID string   `json:"accountId"`
+		Amount    int      `json:"amount"`
+		Type      string   `json:"type"`
+		Reason    string   `json:"reason"`
+		AwardedBy string   `json:"awardedBy"`
+		PhotoURL  string   `json:"photoUrl"`
+		PhotoURLs []string `json:"photoUrls"`
+		Date      string   `json:"date"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -67,7 +69,17 @@ func (h *SandersCashHandler) CreateTransaction(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	txn, err := h.svc.CreateTransaction(req.AccountID, req.Amount, req.Type, req.Reason, req.AwardedBy, req.PhotoURL, req.Date)
+	// Build photo storage: prefer photoUrls array, fall back to single photoUrl
+	photoStore := req.PhotoURL
+	if len(req.PhotoURLs) > 0 {
+		encoded, _ := json.Marshal(req.PhotoURLs)
+		photoStore = string(encoded)
+	} else if req.PhotoURL != "" {
+		encoded, _ := json.Marshal([]string{req.PhotoURL})
+		photoStore = string(encoded)
+	}
+
+	txn, err := h.svc.CreateTransaction(req.AccountID, req.Amount, req.Type, req.Reason, req.AwardedBy, photoStore, req.Date)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -101,16 +113,36 @@ func (h *SandersCashHandler) DeleteTransaction(w http.ResponseWriter, r *http.Re
 func (h *SandersCashHandler) UpdateTransaction(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var req struct {
-		Amount   *int    `json:"amount"`
-		Reason   *string `json:"reason"`
-		PhotoURL *string `json:"photoUrl"`
+		Amount    *int      `json:"amount"`
+		Reason    *string   `json:"reason"`
+		PhotoURL  *string   `json:"photoUrl"`
+		PhotoURLs *[]string `json:"photoUrls"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	txn, err := h.svc.UpdateTransaction(id, req.Amount, req.Reason, req.PhotoURL)
+	// If photoUrls is provided, encode as JSON for storage
+	var photoStore *string
+	if req.PhotoURLs != nil {
+		encoded, _ := json.Marshal(*req.PhotoURLs)
+		s := string(encoded)
+		if len(*req.PhotoURLs) == 0 {
+			s = ""
+		}
+		photoStore = &s
+	} else if req.PhotoURL != nil {
+		if *req.PhotoURL == "" {
+			photoStore = req.PhotoURL
+		} else {
+			encoded, _ := json.Marshal([]string{*req.PhotoURL})
+			s := string(encoded)
+			photoStore = &s
+		}
+	}
+
+	txn, err := h.svc.UpdateTransaction(id, req.Amount, req.Reason, photoStore)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

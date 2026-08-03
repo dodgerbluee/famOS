@@ -2,7 +2,9 @@ package service
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/sandershome/server/internal/db"
@@ -29,19 +31,34 @@ type AccountWithMember struct {
 }
 
 type Transaction struct {
-	ID        string `json:"id"`
-	AccountID string `json:"accountId"`
-	Amount    int    `json:"amount"`
-	Type      string `json:"type"`
-	Reason    string `json:"reason"`
-	AwardedBy string `json:"awardedBy"`
-	PhotoURL  string `json:"photoUrl"`
-	CreatedAt string `json:"createdAt"`
+	ID        string   `json:"id"`
+	AccountID string   `json:"accountId"`
+	Amount    int      `json:"amount"`
+	Type      string   `json:"type"`
+	Reason    string   `json:"reason"`
+	AwardedBy string   `json:"awardedBy"`
+	PhotoURL  string   `json:"photoUrl"`
+	PhotoURLs []string `json:"photoUrls"`
+	CreatedAt string   `json:"createdAt"`
 }
 
 type TransactionWithNames struct {
 	Transaction
 	AwardedByName string `json:"awardedByName"`
+}
+
+func parsePhotoURLs(raw string) (string, []string) {
+	if raw == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(raw, "[") {
+		var urls []string
+		if err := json.Unmarshal([]byte(raw), &urls); err == nil && len(urls) > 0 {
+			return urls[0], urls
+		}
+		return "", nil
+	}
+	return raw, []string{raw}
 }
 
 func (s *SandersCashService) ListAccounts() ([]AccountWithMember, error) {
@@ -132,10 +149,12 @@ func (s *SandersCashService) CreateTransaction(accountID string, amount int, txT
 	}
 
 	var t Transaction
+	var rawPhoto string
 	err = s.db.QueryRow(`
 		SELECT id, account_id, amount, type, reason, COALESCE(awarded_by, ''), COALESCE(photo_url, ''), created_at
 		FROM sanders_cash_transactions WHERE id = ?
-	`, id).Scan(&t.ID, &t.AccountID, &t.Amount, &t.Type, &t.Reason, &t.AwardedBy, &t.PhotoURL, &t.CreatedAt)
+	`, id).Scan(&t.ID, &t.AccountID, &t.Amount, &t.Type, &t.Reason, &t.AwardedBy, &rawPhoto, &t.CreatedAt)
+	t.PhotoURL, t.PhotoURLs = parsePhotoURLs(rawPhoto)
 
 	return &t, err
 }
@@ -191,10 +210,12 @@ func (s *SandersCashService) UpdateTransaction(id string, amount *int, reason *s
 	}
 
 	var t Transaction
+	var rawPhoto string
 	err = s.db.QueryRow(`
 		SELECT id, account_id, amount, type, reason, COALESCE(awarded_by, ''), COALESCE(photo_url, ''), created_at
 		FROM sanders_cash_transactions WHERE id = ?
-	`, id).Scan(&t.ID, &t.AccountID, &t.Amount, &t.Type, &t.Reason, &t.AwardedBy, &t.PhotoURL, &t.CreatedAt)
+	`, id).Scan(&t.ID, &t.AccountID, &t.Amount, &t.Type, &t.Reason, &t.AwardedBy, &rawPhoto, &t.CreatedAt)
+	t.PhotoURL, t.PhotoURLs = parsePhotoURLs(rawPhoto)
 
 	return &t, err
 }
@@ -220,9 +241,11 @@ func (s *SandersCashService) GetTransactions(accountID string, limit int) ([]Tra
 	var txns []TransactionWithNames
 	for rows.Next() {
 		var t TransactionWithNames
-		if err := rows.Scan(&t.ID, &t.AccountID, &t.Amount, &t.Type, &t.Reason, &t.AwardedBy, &t.PhotoURL, &t.CreatedAt, &t.AwardedByName); err != nil {
+		var rawPhoto string
+		if err := rows.Scan(&t.ID, &t.AccountID, &t.Amount, &t.Type, &t.Reason, &t.AwardedBy, &rawPhoto, &t.CreatedAt, &t.AwardedByName); err != nil {
 			return nil, err
 		}
+		t.PhotoURL, t.PhotoURLs = parsePhotoURLs(rawPhoto)
 		txns = append(txns, t)
 	}
 	return txns, nil
