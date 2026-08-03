@@ -47,6 +47,7 @@ func (h *SandersCashHandler) CreateTransaction(w http.ResponseWriter, r *http.Re
 		Reason    string `json:"reason"`
 		AwardedBy string `json:"awardedBy"`
 		PhotoURL  string `json:"photoUrl"`
+		Date      string `json:"date"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -66,7 +67,7 @@ func (h *SandersCashHandler) CreateTransaction(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	txn, err := h.svc.CreateTransaction(req.AccountID, req.Amount, req.Type, req.Reason, req.AwardedBy, req.PhotoURL)
+	txn, err := h.svc.CreateTransaction(req.AccountID, req.Amount, req.Type, req.Reason, req.AwardedBy, req.PhotoURL, req.Date)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -160,7 +161,7 @@ func (h *SandersCashHandler) QuickAward(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	txn, err := h.svc.CreateTransaction(account.ID, req.Amount, "earn", req.Reason, "", "")
+	txn, err := h.svc.CreateTransaction(account.ID, req.Amount, "earn", req.Reason, "", "", "")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

@@ -11,11 +11,12 @@ const PRESET_AMOUNTS = [500, 1000, 2000, 5000, 10000];
 const QUICK_REASONS = ['Great job!', 'Chores done', 'Being kind', 'Good grades', 'Helping out'];
 
 export function AwardModal({ accounts, onAwarded, onClose }: AwardModalProps) {
-  const [selectedKid, setSelectedKid] = useState<string | null>(null);
+  const [selectedKid, setSelectedKid] = useState<string | null>(accounts.length === 1 ? accounts[0].memberId : null);
   const [amount, setAmount] = useState<number | null>(null);
   const [customAmount, setCustomAmount] = useState('');
   const [reason, setReason] = useState('');
   const [customReason, setCustomReason] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -51,6 +52,7 @@ export function AwardModal({ accounts, onAwarded, onClose }: AwardModalProps) {
         photoUrl = uploaded.url;
       }
 
+      const today = new Date().toISOString().slice(0, 10);
       await api.post('/api/sanders-cash/transactions', {
         accountId: account.id,
         amount: effectiveAmount,
@@ -58,6 +60,7 @@ export function AwardModal({ accounts, onAwarded, onClose }: AwardModalProps) {
         reason: effectiveReason,
         awardedBy: '',
         photoUrl,
+        date: date !== today ? date : '',
       });
       onAwarded();
       onClose();
@@ -175,6 +178,16 @@ export function AwardModal({ accounts, onAwarded, onClose }: AwardModalProps) {
             value={customReason}
             onChange={(e) => setCustomReason(e.target.value)}
             className="w-full mt-2 bg-surface-light text-text-bright rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm text-text-dim mb-2">Date</label>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="w-full bg-surface-light text-text-bright rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
 

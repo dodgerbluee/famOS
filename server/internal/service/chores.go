@@ -185,7 +185,7 @@ func (s *ChoresService) CompleteChore(choreID, memberID string) (*ChoreCompletio
 		var accountID string
 		err := s.db.QueryRow(`SELECT id FROM sanders_cash_accounts WHERE member_id = ?`, memberID).Scan(&accountID)
 		if err == nil {
-			s.cash.CreateTransaction(accountID, rewardAmount, "earn", "Chore completed", "", "")
+			s.cash.CreateTransaction(accountID, rewardAmount, "earn", "Chore completed", "", "", "")
 		}
 	}
 
@@ -209,7 +209,7 @@ func (s *ChoresService) UncompleteChore(choreID, memberID string) error {
 		var accountID string
 		err := s.db.QueryRow(`SELECT id FROM sanders_cash_accounts WHERE member_id = ?`, memberID).Scan(&accountID)
 		if err == nil {
-			s.cash.CreateTransaction(accountID, -rewardAmount, "adjust", "Chore uncompleted", "", "")
+			s.cash.CreateTransaction(accountID, -rewardAmount, "adjust", "Chore uncompleted", "", "", "")
 		}
 	}
 
