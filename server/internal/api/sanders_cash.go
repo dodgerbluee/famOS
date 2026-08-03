@@ -82,18 +82,34 @@ func (h *SandersCashHandler) CreateTransaction(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusCreated, txn)
 }
 
+func (h *SandersCashHandler) DeleteTransaction(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.svc.DeleteTransaction(id); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	accounts, _ := h.svc.ListAccounts()
+	if accounts != nil {
+		h.hub.Broadcast("sanders_cash_accounts", accounts)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
 func (h *SandersCashHandler) UpdateTransaction(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var req struct {
-		Amount *int    `json:"amount"`
-		Reason *string `json:"reason"`
+		Amount   *int    `json:"amount"`
+		Reason   *string `json:"reason"`
+		PhotoURL *string `json:"photoUrl"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	txn, err := h.svc.UpdateTransaction(id, req.Amount, req.Reason)
+	txn, err := h.svc.UpdateTransaction(id, req.Amount, req.Reason, req.PhotoURL)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

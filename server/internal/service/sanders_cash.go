@@ -133,7 +133,27 @@ func (s *SandersCashService) CreateTransaction(accountID string, amount int, txT
 	return &t, err
 }
 
-func (s *SandersCashService) UpdateTransaction(id string, amount *int, reason *string) (*Transaction, error) {
+func (s *SandersCashService) DeleteTransaction(id string) error {
+	var amount int
+	var accountID string
+	err := s.db.QueryRow(`SELECT amount, account_id FROM sanders_cash_transactions WHERE id = ?`, id).Scan(&amount, &accountID)
+	if err != nil {
+		return fmt.Errorf("transaction not found")
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	tx.Exec(`DELETE FROM sanders_cash_transactions WHERE id = ?`, id)
+	tx.Exec(`UPDATE sanders_cash_accounts SET balance = balance - ? WHERE id = ?`, amount, accountID)
+
+	return tx.Commit()
+}
+
+func (s *SandersCashService) UpdateTransaction(id string, amount *int, reason *string, photoURL *string) (*Transaction, error) {
 	var oldAmount int
 	var accountID string
 	err := s.db.QueryRow(`SELECT amount, account_id FROM sanders_cash_transactions WHERE id = ?`, id).Scan(&oldAmount, &accountID)
@@ -154,6 +174,9 @@ func (s *SandersCashService) UpdateTransaction(id string, amount *int, reason *s
 		diff := *amount - oldAmount
 		tx.Exec(`UPDATE sanders_cash_transactions SET amount = ? WHERE id = ?`, *amount, id)
 		tx.Exec(`UPDATE sanders_cash_accounts SET balance = balance + ? WHERE id = ?`, diff, accountID)
+	}
+	if photoURL != nil {
+		tx.Exec(`UPDATE sanders_cash_transactions SET photo_url = ? WHERE id = ?`, *photoURL, id)
 	}
 
 	if err := tx.Commit(); err != nil {

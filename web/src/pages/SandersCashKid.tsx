@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, type AccountWithMember, type FamilyMember, type TransactionWithNames } from '../api/client';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -41,18 +41,43 @@ function TransactionPopup({ txn, onClose, onUpdated }: TxnPopupProps) {
   const [editing, setEditing] = useState(false);
   const [reason, setReason] = useState(txn.reason);
   const [amountStr, setAmountStr] = useState((Math.abs(txn.amount) / 100).toFixed(2));
+  const [photoUrl, setPhotoUrl] = useState(txn.photoUrl);
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const handleSave = async () => {
     setSaving(true);
     try {
       const newAmount = Math.round(parseFloat(amountStr) * 100) * (txn.amount < 0 ? -1 : 1);
-      await api.put(`/api/sanders-cash/transactions/${txn.id}`, { amount: newAmount, reason });
+      await api.put(`/api/sanders-cash/transactions/${txn.id}`, { amount: newAmount, reason, photoUrl });
       onUpdated();
       onClose();
     } catch {
       setSaving(false);
     }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await api.delete(`/api/sanders-cash/transactions/${txn.id}`);
+      onUpdated();
+      onClose();
+    } catch {
+      setDeleting(false);
+    }
+  };
+
+  const handlePhotoUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const result = await api.upload('/api/uploads', file);
+      setPhotoUrl(result.url);
+    } catch { /* ignore */ }
+    setUploading(false);
   };
 
   return (
@@ -65,9 +90,21 @@ function TransactionPopup({ txn, onClose, onUpdated }: TxnPopupProps) {
           <button onClick={onClose} className="text-text-dim text-2xl leading-none min-w-[44px] min-h-[44px] flex items-center justify-center">×</button>
         </div>
 
-        {txn.photoUrl && (
-          <img src={txn.photoUrl} alt="" className="w-full rounded-xl object-contain max-h-64" />
-        )}
+        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f); }} />
+
+        {photoUrl ? (
+          <div className="relative">
+            <img src={photoUrl} alt="" className="w-full rounded-xl object-contain max-h-64" />
+            {editing && (
+              <button type="button" onClick={() => setPhotoUrl('')} className="absolute top-2 right-2 w-7 h-7 bg-accent-red text-white rounded-full text-xs flex items-center justify-center">×</button>
+            )}
+          </div>
+        ) : editing ? (
+          <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} className="flex items-center gap-2 px-4 py-3 bg-surface-light rounded-xl text-text-dim text-sm min-h-[48px] w-full">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
+            {uploading ? 'Uploading...' : 'Add Photo'}
+          </button>
+        ) : null}
 
         {editing ? (
           <>
@@ -82,6 +119,11 @@ function TransactionPopup({ txn, onClose, onUpdated }: TxnPopupProps) {
                 <input type="number" step="0.01" min="0.01" value={amountStr} onChange={(e) => setAmountStr(e.target.value)} className="w-full bg-surface-light text-text-bright rounded-lg pl-7 pr-4 py-3 outline-none focus:ring-2 focus:ring-primary font-bold" />
               </div>
             </div>
+            {photoUrl && !txn.photoUrl && (
+              <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} className="text-primary-light text-sm font-medium min-h-[44px]">
+                {uploading ? 'Uploading...' : 'Change Photo'}
+              </button>
+            )}
             <div className="flex gap-2">
               <button onClick={handleSave} disabled={saving} className="flex-1 bg-accent-green text-bg font-bold py-3 rounded-xl min-h-[48px] disabled:opacity-50">
                 {saving ? 'Saving...' : 'Save'}
@@ -104,6 +146,22 @@ function TransactionPopup({ txn, onClose, onUpdated }: TxnPopupProps) {
             <button onClick={() => setEditing(true)} className="text-primary-light text-sm font-medium min-h-[44px]">Edit</button>
           </>
         )}
+
+        <div className="pt-2 border-t border-surface-lighter">
+          {confirmDelete ? (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-text-dim">Delete this entry? Balance will be adjusted.</p>
+              <div className="flex gap-2">
+                <button onClick={handleDelete} disabled={deleting} className="text-accent-red text-sm font-medium px-3 py-2 min-h-[44px] disabled:opacity-50">
+                  {deleting ? 'Deleting...' : 'Yes, Delete'}
+                </button>
+                <button onClick={() => setConfirmDelete(false)} className="text-text-dim text-sm px-3 py-2 min-h-[44px]">Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setConfirmDelete(true)} className="text-accent-red text-sm px-1 py-2 min-h-[44px]">Delete Entry</button>
+          )}
+        </div>
       </div>
     </div>
   );
