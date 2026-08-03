@@ -54,6 +54,7 @@ func (d *DB) Migrate() error {
 	// Rename email→username for DBs from previous migration, then add if neither existed
 	renameColumnIfExists(d, "family_members", "email", "username")
 	addColumnIfNotExists(d, "family_members", "username", "TEXT DEFAULT ''")
+	addColumnIfNotExists(d, "family_members", "birthday", "TEXT DEFAULT ''")
 
 	// Create default family for existing members
 	var memberCount int

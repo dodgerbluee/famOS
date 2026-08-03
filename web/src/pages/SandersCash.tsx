@@ -1,16 +1,23 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, type AccountWithMember, type TransactionWithNames } from '../api/client';
+import { api, type AccountWithMember, type FamilyMember } from '../api/client';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { Leaderboard } from '../components/sanders-cash/Leaderboard';
 import { AwardModal } from '../components/sanders-cash/AwardModal';
 import { AdjustModal } from '../components/sanders-cash/AdjustModal';
-import { TransactionHistory } from '../components/sanders-cash/TransactionHistory';
+
+function getAge(birthday: string): number | null {
+  if (!birthday) return null;
+  const birth = new Date(birthday + 'T00:00:00');
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age--;
+  return age;
+}
 
 export function SandersCash() {
   const [accounts, setAccounts] = useState<AccountWithMember[]>([]);
-  const [selectedMember, setSelectedMember] = useState<string | null>(null);
-  const [transactions, setTransactions] = useState<TransactionWithNames[]>([]);
+  const [members, setMembers] = useState<FamilyMember[]>([]);
   const [showAward, setShowAward] = useState(false);
   const [showAdjust, setShowAdjust] = useState(false);
   const navigate = useNavigate();
@@ -19,29 +26,16 @@ export function SandersCash() {
     api.get<AccountWithMember[]>('/api/sanders-cash/accounts').then(setAccounts).catch(() => {});
   }, []);
 
-  const loadTransactions = useCallback((memberId: string) => {
-    const account = accounts.find((a) => a.memberId === memberId);
-    if (!account) return;
-    api
-      .get<TransactionWithNames[]>(`/api/sanders-cash/transactions/${account.id}`)
-      .then(setTransactions)
-      .catch(() => {});
-  }, [accounts]);
-
-  useEffect(loadAccounts, [loadAccounts]);
-
   useEffect(() => {
-    if (selectedMember) loadTransactions(selectedMember);
-  }, [selectedMember, loadTransactions]);
+    loadAccounts();
+    api.get<FamilyMember[]>('/api/family').then(setMembers).catch(() => {});
+  }, [loadAccounts]);
 
   useWebSocket((msg) => {
     if (msg.type === 'sanders_cash_accounts') {
       setAccounts(msg.payload as AccountWithMember[]);
-      if (selectedMember) loadTransactions(selectedMember);
     }
   });
-
-  const selectedAccount = accounts.find((a) => a.memberId === selectedMember);
 
   return (
     <div className="space-y-6">
@@ -69,47 +63,52 @@ export function SandersCash() {
         </div>
       </div>
 
-      <Leaderboard
-        accounts={accounts}
-        onSelect={(id) => setSelectedMember(id === selectedMember ? null : id)}
-      />
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        {accounts.map((account) => {
+          const member = members.find((m) => m.id === account.memberId);
+          const age = member ? getAge(member.birthday) : null;
 
-      {selectedAccount && (
-        <div className="bg-surface rounded-2xl p-3 md:p-5">
-          <div className="flex items-center gap-3 mb-4">
-            <div
-              className="w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold text-bg"
-              style={{ backgroundColor: selectedAccount.memberColor }}
+          return (
+            <button
+              key={account.memberId}
+              onClick={() => navigate(`/sanders-cash/${account.memberId}`)}
+              className="bg-surface rounded-2xl p-5 flex flex-col items-center gap-3 hover:bg-surface-light active:scale-[0.98] transition-all"
             >
-              {selectedAccount.memberName[0]}
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-text-bright">
-                {selectedAccount.memberName}
-              </h2>
-              <p className="text-accent-green font-bold">
-                Balance: ${(selectedAccount.balance / 100).toFixed(2)}
+              {member?.avatarUrl ? (
+                <img
+                  src={member.avatarUrl}
+                  alt={account.memberName}
+                  className="w-20 h-20 rounded-full object-cover"
+                />
+              ) : (
+                <div
+                  className="w-20 h-20 rounded-full flex items-center justify-center text-3xl font-bold text-bg"
+                  style={{ backgroundColor: account.memberColor }}
+                >
+                  {account.memberName[0]}
+                </div>
+              )}
+              <div className="text-center">
+                <p className="text-text-bright font-semibold text-lg">{account.memberName}</p>
+                {age !== null && <p className="text-text-dim text-sm">Age {age}</p>}
+              </div>
+              <p className="text-accent-green font-bold text-2xl">
+                ${(account.balance / 100).toFixed(2)}
               </p>
-            </div>
-          </div>
-          <TransactionHistory transactions={transactions} />
-        </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {accounts.length === 0 && (
+        <p className="text-text-dim text-center py-8">No accounts yet — add kids in Settings</p>
       )}
 
       {showAward && (
-        <AwardModal
-          accounts={accounts}
-          onAwarded={loadAccounts}
-          onClose={() => setShowAward(false)}
-        />
+        <AwardModal accounts={accounts} onAwarded={loadAccounts} onClose={() => setShowAward(false)} />
       )}
-
       {showAdjust && (
-        <AdjustModal
-          accounts={accounts}
-          onAdjusted={loadAccounts}
-          onClose={() => setShowAdjust(false)}
-        />
+        <AdjustModal accounts={accounts} onAdjusted={loadAccounts} onClose={() => setShowAdjust(false)} />
       )}
     </div>
   );

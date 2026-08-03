@@ -133,6 +133,42 @@ func (s *SandersCashService) CreateTransaction(accountID string, amount int, txT
 	return &t, err
 }
 
+func (s *SandersCashService) UpdateTransaction(id string, amount *int, reason *string) (*Transaction, error) {
+	var oldAmount int
+	var accountID string
+	err := s.db.QueryRow(`SELECT amount, account_id FROM sanders_cash_transactions WHERE id = ?`, id).Scan(&oldAmount, &accountID)
+	if err != nil {
+		return nil, fmt.Errorf("transaction not found")
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	if reason != nil {
+		tx.Exec(`UPDATE sanders_cash_transactions SET reason = ? WHERE id = ?`, *reason, id)
+	}
+	if amount != nil {
+		diff := *amount - oldAmount
+		tx.Exec(`UPDATE sanders_cash_transactions SET amount = ? WHERE id = ?`, *amount, id)
+		tx.Exec(`UPDATE sanders_cash_accounts SET balance = balance + ? WHERE id = ?`, diff, accountID)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	var t Transaction
+	err = s.db.QueryRow(`
+		SELECT id, account_id, amount, type, reason, COALESCE(awarded_by, ''), COALESCE(photo_url, ''), created_at
+		FROM sanders_cash_transactions WHERE id = ?
+	`, id).Scan(&t.ID, &t.AccountID, &t.Amount, &t.Type, &t.Reason, &t.AwardedBy, &t.PhotoURL, &t.CreatedAt)
+
+	return &t, err
+}
+
 func (s *SandersCashService) GetTransactions(accountID string, limit int) ([]TransactionWithNames, error) {
 	if limit <= 0 {
 		limit = 50

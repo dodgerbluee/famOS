@@ -6,6 +6,7 @@ import { Home } from './pages/Home';
 import { Calendar } from './pages/Calendar';
 import { Cameras } from './pages/Cameras';
 import { SandersCash } from './pages/SandersCash';
+import { SandersCashKid } from './pages/SandersCashKid';
 import { RewardStore } from './pages/RewardStore';
 import { Settings } from './pages/Settings';
 import { Weather } from './pages/Weather';
@@ -83,6 +84,7 @@ export default function App() {
             <Route path="/cameras" element={<Cameras />} />
             <Route path="/sanders-cash" element={<SandersCash />} />
             <Route path="/sanders-cash/store" element={<RewardStore />} />
+            <Route path="/sanders-cash/:memberId" element={<SandersCashKid />} />
             <Route path="/weather" element={<Weather />} />
             <Route path="/chores" element={<Chores />} />
             <Route path="/batch" element={<BatchProcesses />} />

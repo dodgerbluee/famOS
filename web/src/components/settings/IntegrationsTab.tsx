@@ -3,12 +3,11 @@ import { api, type Camera } from '../../api/client';
 import { AIProviderSettings } from './AIProviderSettings';
 
 type Settings = Record<string, string>;
-type Section = 'cameras' | 'mqtt' | 'motion' | 'gatus' | 'overseerr' | 'vikunja' | 'immich' | 'weather' | 'ai';
+type Section = 'frigate' | 'mqtt' | 'gatus' | 'overseerr' | 'vikunja' | 'immich' | 'weather' | 'ai';
 
 const SECTIONS: { id: Section; label: string }[] = [
-  { id: 'cameras', label: 'Cameras' },
+  { id: 'frigate', label: 'Frigate' },
   { id: 'mqtt', label: 'MQTT' },
-  { id: 'motion', label: 'Motion Alerts' },
   { id: 'gatus', label: 'Gatus' },
   { id: 'overseerr', label: 'Overseerr' },
   { id: 'vikunja', label: 'Vikunja' },
@@ -30,7 +29,7 @@ function parseCameraFitModes(raw: string): Record<string, 'cover' | 'contain'> {
 }
 
 export function IntegrationsTab() {
-  const [active, setActive] = useState<Section>('cameras');
+  const [active, setActive] = useState<Section>('frigate');
   const [frigateUrl, setFrigateUrl] = useState('');
   const [frigateUser, setFrigateUser] = useState('');
   const [frigatePass, setFrigatePass] = useState('');
@@ -189,7 +188,7 @@ export function IntegrationsTab() {
 
   const renderContent = () => {
     switch (active) {
-      case 'cameras':
+      case 'frigate':
         return (
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-text-bright">Frigate Cameras</h3>
@@ -230,6 +229,32 @@ export function IntegrationsTab() {
                 </div>
               </>
             )}
+
+            <h4 className="text-sm font-medium text-text-dim uppercase tracking-wide pt-4">Motion Alerts</h4>
+            <div>
+              <label className="block text-sm text-text-dim mb-1">Alert Labels</label>
+              <input type="text" value={motionAlertLabels} onChange={(e) => setMotionAlertLabels(e.target.value)} placeholder="person, package" className={inputClass} />
+              <p className="text-text-dim text-xs mt-1">Comma-separated Frigate labels that trigger the in-app preview.</p>
+            </div>
+            <div>
+              <label className="block text-sm text-text-dim mb-2">Preview Cameras</label>
+              {availableCameras.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {availableCameras.map((camera) => {
+                    const selected = motionAlertCameras.includes(camera.name);
+                    return (
+                      <button key={camera.name} type="button" onClick={() => setMotionAlertCameras((c) => selected ? c.filter((n) => n !== camera.name) : [...c, camera.name])}
+                        className={`px-4 py-2 rounded-xl text-sm font-medium min-h-[44px] transition-colors ${selected ? 'bg-primary text-white' : 'bg-surface-lighter text-text-dim'}`}>
+                        {camera.name.replace(/_/g, ' ')}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-text-dim text-sm">No cameras loaded yet.</p>
+              )}
+              <p className="text-text-dim text-xs mt-1">Only alerts from selected cameras will show the preview. If none selected, all are allowed.</p>
+            </div>
             {saveBtn(saveAll, saving, saved, 'Save Settings')}
           </div>
         );
@@ -280,38 +305,6 @@ export function IntegrationsTab() {
               </button>
               {mqttTestResult && <span className={`text-sm ${mqttTestResult.ok ? 'text-accent-green' : 'text-accent-red'}`}>{mqttTestResult.msg}</span>}
             </div>
-          </div>
-        );
-
-      case 'motion':
-        return (
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-text-bright">Motion Alert Display</h3>
-            <div>
-              <label className="block text-sm text-text-dim mb-1">Alert Labels</label>
-              <input type="text" value={motionAlertLabels} onChange={(e) => setMotionAlertLabels(e.target.value)} placeholder="person, package" className={inputClass} />
-              <p className="text-text-dim text-xs mt-1">Comma-separated Frigate labels that trigger the in-app preview.</p>
-            </div>
-            <div>
-              <label className="block text-sm text-text-dim mb-2">Preview Cameras</label>
-              {availableCameras.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {availableCameras.map((camera) => {
-                    const selected = motionAlertCameras.includes(camera.name);
-                    return (
-                      <button key={camera.name} type="button" onClick={() => setMotionAlertCameras((c) => selected ? c.filter((n) => n !== camera.name) : [...c, camera.name])}
-                        className={`px-4 py-2 rounded-xl text-sm font-medium min-h-[44px] transition-colors ${selected ? 'bg-primary text-white' : 'bg-surface-lighter text-text-dim'}`}>
-                        {camera.name.replace(/_/g, ' ')}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-text-dim text-sm">No cameras loaded yet.</p>
-              )}
-              <p className="text-text-dim text-xs mt-1">Only alerts from selected cameras will show the preview. If none selected, all are allowed.</p>
-            </div>
-            {saveBtn(saveAll, saving, saved, 'Save Settings')}
           </div>
         );
 
