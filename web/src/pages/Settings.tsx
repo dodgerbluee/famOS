@@ -3,11 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { FamilyTab } from '../components/settings/FamilyTab';
 import { SourceManager } from '../components/calendar/SourceManager';
-import { IntegrationSettings } from '../components/settings/IntegrationSettings';
-import { AIProviderSettings } from '../components/settings/AIProviderSettings';
+import { IntegrationsTab } from '../components/settings/IntegrationsTab';
 import { InvitesTab } from '../components/settings/InvitesTab';
 
-type Tab = 'family' | 'calendars' | 'integrations' | 'ai' | 'invites';
+type Tab = 'family' | 'calendars' | 'integrations' | 'invites';
 
 export function Settings() {
   const { hasPermission } = useAuth();
@@ -18,7 +17,6 @@ export function Settings() {
     { id: 'invites', label: 'Invites', permission: 'invites.manage' },
     { id: 'calendars', label: 'Calendars', permission: 'settings.view' },
     { id: 'integrations', label: 'Integrations', permission: 'settings.edit' },
-    { id: 'ai', label: 'AI', permission: 'settings.edit' },
   ];
 
   const visible = tabs.filter((t) => hasPermission(t.permission));
@@ -57,12 +55,7 @@ export function Settings() {
       {activeTab === 'family' && <FamilyTab />}
       {activeTab === 'invites' && <InvitesTab />}
       {activeTab === 'calendars' && <SourceManager />}
-      {activeTab === 'integrations' && <IntegrationSettings />}
-      {activeTab === 'ai' && (
-        <div className="bg-surface rounded-2xl p-5">
-          <AIProviderSettings />
-        </div>
-      )}
+      {activeTab === 'integrations' && <IntegrationsTab />}
     </div>
   );
 }
