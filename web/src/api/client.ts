@@ -93,6 +93,7 @@ export interface TransactionWithNames {
   reason: string;
   awardedBy: string;
   photoUrl: string;
+  photoUrls: string[];
   createdAt: string;
   awardedByName: string;
 }

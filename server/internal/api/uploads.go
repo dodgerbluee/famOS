@@ -32,8 +32,35 @@ func (h *UploadsHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	ext := strings.ToLower(filepath.Ext(header.Filename))
-	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".webp" && ext != ".heic" {
+	// Read first 512 bytes to detect content type
+	buf := make([]byte, 512)
+	n, _ := file.Read(buf)
+	detected := http.DetectContentType(buf[:n])
+
+	// Seek back to start
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to process file")
+		return
+	}
+
+	// Determine extension from detected content type, fall back to filename extension
+	ext := ""
+	switch {
+	case strings.HasPrefix(detected, "image/jpeg"):
+		ext = ".jpg"
+	case strings.HasPrefix(detected, "image/png"):
+		ext = ".png"
+	case strings.HasPrefix(detected, "image/webp"):
+		ext = ".webp"
+	case strings.HasPrefix(detected, "image/gif"):
+		ext = ".gif"
+	default:
+		// Fall back to file extension
+		ext = strings.ToLower(filepath.Ext(header.Filename))
+	}
+
+	allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".gif": true, ".heic": true, ".heif": true}
+	if !allowed[ext] {
 		writeError(w, http.StatusBadRequest, "unsupported image format")
 		return
 	}

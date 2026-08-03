@@ -6,6 +6,7 @@ import { formatDate, useTimezone } from '../lib/timezone';
 import { AwardModal } from '../components/sanders-cash/AwardModal';
 
 type Tab = 'history' | 'photos';
+type PhotoFilter = 'all' | 'earned' | 'spent';
 
 function getAge(birthday: string): number | null {
   if (!birthday) return null;
@@ -31,6 +32,12 @@ function formatTxnDate(dateStr: string, timezone: string): string {
   return formatDate(date, timezone, { month: 'short', day: 'numeric' });
 }
 
+function getPhotos(txn: TransactionWithNames): string[] {
+  if (txn.photoUrls && txn.photoUrls.length > 0) return txn.photoUrls;
+  if (txn.photoUrl) return [txn.photoUrl];
+  return [];
+}
+
 interface TxnPopupProps {
   txn: TransactionWithNames;
   onClose: () => void;
@@ -42,7 +49,7 @@ function TransactionPopup({ txn, onClose, onUpdated }: TxnPopupProps) {
   const [editing, setEditing] = useState(false);
   const [reason, setReason] = useState(txn.reason);
   const [amountStr, setAmountStr] = useState((Math.abs(txn.amount) / 100).toFixed(2));
-  const [photoUrl, setPhotoUrl] = useState(txn.photoUrl);
+  const [photos, setPhotos] = useState<string[]>(getPhotos(txn));
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -53,7 +60,7 @@ function TransactionPopup({ txn, onClose, onUpdated }: TxnPopupProps) {
     setSaving(true);
     try {
       const newAmount = Math.round(parseFloat(amountStr) * 100) * (txn.amount < 0 ? -1 : 1);
-      await api.put(`/api/sanders-cash/transactions/${txn.id}`, { amount: newAmount, reason, photoUrl });
+      await api.put(`/api/sanders-cash/transactions/${txn.id}`, { amount: newAmount, reason, photoUrls: photos });
       onUpdated();
       onClose();
     } catch {
@@ -76,9 +83,13 @@ function TransactionPopup({ txn, onClose, onUpdated }: TxnPopupProps) {
     setUploading(true);
     try {
       const result = await api.upload('/api/uploads', file);
-      setPhotoUrl(result.url);
+      setPhotos([...photos, result.url]);
     } catch { /* ignore */ }
     setUploading(false);
+  };
+
+  const removePhoto = (index: number) => {
+    setPhotos(photos.filter((_, i) => i !== index));
   };
 
   return (
@@ -91,24 +102,34 @@ function TransactionPopup({ txn, onClose, onUpdated }: TxnPopupProps) {
           <button onClick={onClose} className="text-text-dim text-2xl leading-none min-w-[44px] min-h-[44px] flex items-center justify-center">×</button>
         </div>
 
-        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f); }} />
+        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f); if (fileRef.current) fileRef.current.value = ''; }} />
 
-        {photoUrl ? (
-          <div className="relative">
-            <img src={photoUrl} alt="" className="w-full rounded-xl object-contain max-h-64" />
-            {editing && (
-              <button type="button" onClick={() => setPhotoUrl('')} className="absolute top-2 right-2 w-7 h-7 bg-accent-red text-white rounded-full text-xs flex items-center justify-center">×</button>
-            )}
+        {/* Photo display */}
+        {photos.length > 0 && (
+          <div className="flex gap-2 flex-wrap">
+            {photos.map((url, i) => (
+              <div key={i} className="relative group">
+                <img src={url} alt="" className="w-20 h-20 rounded-xl object-cover" />
+                {editing && (
+                  <button
+                    type="button"
+                    onClick={() => removePhoto(i)}
+                    className="absolute -top-1.5 -right-1.5 w-6 h-6 bg-surface-lighter border border-surface-lighter text-text-dim rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-light hover:text-text-bright"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
-        ) : editing ? (
-          <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} className="flex items-center gap-2 px-4 py-3 bg-surface-light rounded-xl text-text-dim text-sm min-h-[48px] w-full">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
-            {uploading ? 'Uploading...' : 'Add Photo'}
-          </button>
-        ) : null}
+        )}
 
         {editing ? (
           <>
+            <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} className="flex items-center gap-2 px-4 py-3 bg-surface-light rounded-xl text-text-dim text-sm min-h-[48px] w-full">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
+              {uploading ? 'Uploading...' : 'Add Photo'}
+            </button>
             <div>
               <label className="block text-sm text-text-dim mb-1">Reason</label>
               <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} className="w-full bg-surface-light text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary" />
@@ -120,11 +141,6 @@ function TransactionPopup({ txn, onClose, onUpdated }: TxnPopupProps) {
                 <input type="number" step="0.01" min="0.01" value={amountStr} onChange={(e) => setAmountStr(e.target.value)} className="w-full bg-surface-light text-text-bright rounded-lg pl-7 pr-4 py-3 outline-none focus:ring-2 focus:ring-primary font-bold" />
               </div>
             </div>
-            {photoUrl && !txn.photoUrl && (
-              <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} className="text-primary-light text-sm font-medium min-h-[44px]">
-                {uploading ? 'Uploading...' : 'Change Photo'}
-              </button>
-            )}
             <div className="flex gap-2">
               <button onClick={handleSave} disabled={saving} className="flex-1 bg-accent-green text-bg font-bold py-3 rounded-xl min-h-[48px] disabled:opacity-50">
                 {saving ? 'Saving...' : 'Save'}
@@ -169,7 +185,7 @@ function TransactionPopup({ txn, onClose, onUpdated }: TxnPopupProps) {
 }
 
 interface PhotoViewerProps {
-  photos: TransactionWithNames[];
+  photos: { url: string; reason: string }[];
   startIndex: number;
   onClose: () => void;
 }
@@ -195,7 +211,7 @@ function PhotoViewer({ photos, startIndex, onClose }: PhotoViewerProps) {
           <button onClick={() => setIndex(index - 1)} className="absolute left-4 top-1/2 -translate-y-1/2 bg-surface/80 text-text-bright w-12 h-12 rounded-full flex items-center justify-center text-xl z-10">‹</button>
         )}
         <div className="flex flex-col items-center gap-3 max-w-full max-h-full">
-          <img src={photo.photoUrl} alt="" className="max-w-full max-h-[75vh] rounded-2xl object-contain" />
+          <img src={photo.url} alt="" className="max-w-full max-h-[75vh] rounded-2xl object-contain" />
           <p className="text-text-bright text-center">{photo.reason}</p>
           <p className="text-text-dim text-sm">{index + 1} / {photos.length}</p>
         </div>
@@ -219,6 +235,7 @@ export function SandersCashKid() {
   const [selectedTxn, setSelectedTxn] = useState<TransactionWithNames | null>(null);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [showAward, setShowAward] = useState(false);
+  const [photoFilter, setPhotoFilter] = useState<PhotoFilter>('all');
 
   const loadData = useCallback(() => {
     if (!memberId) return;
@@ -241,7 +258,17 @@ export function SandersCashKid() {
     }
   });
 
-  const photosOnly = transactions.filter((t) => t.photoUrl);
+  const txnsWithPhotos = transactions.filter((t) => getPhotos(t).length > 0);
+  const filteredPhotoTxns = txnsWithPhotos.filter((t) => {
+    if (photoFilter === 'earned') return t.amount > 0;
+    if (photoFilter === 'spent') return t.amount < 0;
+    return true;
+  });
+
+  const allPhotoEntries = filteredPhotoTxns.flatMap((t) =>
+    getPhotos(t).map((url) => ({ url, reason: t.reason, amount: t.amount }))
+  );
+
   const age = member ? getAge(member.birthday) : null;
 
   if (!account) {
@@ -289,7 +316,7 @@ export function SandersCashKid() {
                 onClick={() => setShowAward(true)}
                 className="mt-3 bg-primary text-white text-sm font-medium px-4 py-2 min-h-[44px] rounded-xl active:scale-95 transition-transform"
               >
-                + Award
+                + Award / Adjust
               </button>
             </div>
           </div>
@@ -308,7 +335,7 @@ export function SandersCashKid() {
                     : 'text-text-dim hover:text-text-bright'
                 }`}
               >
-                {t === 'history' ? 'History' : `Photos${photosOnly.length > 0 ? ` (${photosOnly.length})` : ''}`}
+                {t === 'history' ? 'History' : `Photos${txnsWithPhotos.length > 0 ? ` (${allPhotoEntries.length})` : ''}`}
                 {tab === t && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
               </button>
             ))}
@@ -318,49 +345,73 @@ export function SandersCashKid() {
         <div className="p-5 md:p-6">
           {tab === 'history' && (
             <div className="space-y-2">
-              {transactions.map((txn) => (
-                <button
-                  key={txn.id}
-                  onClick={() => setSelectedTxn(txn)}
-                  className="w-full flex items-center gap-3 bg-surface-light rounded-xl p-3 text-left hover:bg-surface-lighter active:scale-[0.99] transition-all"
-                >
-                  {txn.photoUrl ? (
-                    <div className="w-10 h-10 rounded-full overflow-hidden shrink-0">
-                      <img src={txn.photoUrl} alt="" className="w-full h-full object-cover" />
+              {transactions.map((txn) => {
+                const txnPhotos = getPhotos(txn);
+                return (
+                  <button
+                    key={txn.id}
+                    onClick={() => setSelectedTxn(txn)}
+                    className="w-full flex items-center gap-3 bg-surface-light rounded-xl p-3 text-left hover:bg-surface-lighter active:scale-[0.99] transition-all"
+                  >
+                    {txnPhotos.length > 0 ? (
+                      <div className="w-10 h-10 rounded-full overflow-hidden shrink-0">
+                        <img src={txnPhotos[0]} alt="" className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold shrink-0 ${txn.amount > 0 ? 'bg-accent-green/20 text-accent-green' : 'bg-accent-red/20 text-accent-red'}`}>
+                        {txn.amount > 0 ? '+' : '-'}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-text-bright text-sm font-medium truncate">{txn.reason}</p>
+                      <p className="text-text-dim text-xs">
+                        {formatTxnDate(txn.createdAt, timezone)}
+                        {txn.awardedByName && ` · ${txn.awardedByName}`}
+                        {txnPhotos.length > 1 && ` · ${txnPhotos.length} photos`}
+                      </p>
                     </div>
-                  ) : (
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold shrink-0 ${txn.amount > 0 ? 'bg-accent-green/20 text-accent-green' : 'bg-accent-red/20 text-accent-red'}`}>
-                      {txn.amount > 0 ? '+' : '-'}
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-text-bright text-sm font-medium truncate">{txn.reason}</p>
-                    <p className="text-text-dim text-xs">
-                      {formatTxnDate(txn.createdAt, timezone)}
-                      {txn.awardedByName && ` · ${txn.awardedByName}`}
-                    </p>
-                  </div>
-                  <span className={`font-bold text-sm shrink-0 ${txn.amount > 0 ? 'text-accent-green' : 'text-accent-red'}`}>
-                    {txn.amount > 0 ? '+' : ''}${(txn.amount / 100).toFixed(2)}
-                  </span>
-                </button>
-              ))}
+                    <span className={`font-bold text-sm shrink-0 ${txn.amount > 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+                      {txn.amount > 0 ? '+' : ''}${(txn.amount / 100).toFixed(2)}
+                    </span>
+                  </button>
+                );
+              })}
               {transactions.length === 0 && <p className="text-text-dim text-center py-4 text-sm">No transactions yet</p>}
             </div>
           )}
 
           {tab === 'photos' && (
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
-              {photosOnly.map((txn, i) => (
-                <button
-                  key={txn.id}
-                  onClick={() => setViewerIndex(i)}
-                  className="aspect-square rounded-xl overflow-hidden hover:opacity-90 active:scale-[0.97] transition-all"
-                >
-                  <img src={txn.photoUrl} alt={txn.reason} className="w-full h-full object-cover" />
-                </button>
-              ))}
-              {photosOnly.length === 0 && <p className="text-text-dim text-center py-4 text-sm col-span-full">No photos yet</p>}
+            <div className="space-y-3">
+              <div className="flex gap-1.5">
+                {(['all', 'earned', 'spent'] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setPhotoFilter(f)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      photoFilter === f
+                        ? 'bg-primary text-white'
+                        : 'bg-surface-light text-text-dim'
+                    }`}
+                  >
+                    {f === 'all' ? 'All' : f === 'earned' ? 'Earned' : 'Spent/Adjusted'}
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+                {allPhotoEntries.map((entry, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setViewerIndex(i)}
+                    className="aspect-square rounded-xl overflow-hidden hover:opacity-90 active:scale-[0.97] transition-all relative"
+                  >
+                    <img src={entry.url} alt={entry.reason} className="w-full h-full object-cover" />
+                    <div className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${entry.amount > 0 ? 'bg-accent-green text-bg' : 'bg-accent-red text-white'}`}>
+                      {entry.amount > 0 ? '+' : '−'}
+                    </div>
+                  </button>
+                ))}
+                {allPhotoEntries.length === 0 && <p className="text-text-dim text-center py-4 text-sm col-span-full">No photos yet</p>}
+              </div>
             </div>
           )}
         </div>
@@ -380,7 +431,7 @@ export function SandersCashKid() {
 
       {viewerIndex !== null && (
         <PhotoViewer
-          photos={photosOnly}
+          photos={allPhotoEntries}
           startIndex={viewerIndex}
           onClose={() => setViewerIndex(null)}
         />
