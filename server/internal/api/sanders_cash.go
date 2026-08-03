@@ -82,6 +82,32 @@ func (h *SandersCashHandler) CreateTransaction(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusCreated, txn)
 }
 
+func (h *SandersCashHandler) UpdateTransaction(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Amount *int    `json:"amount"`
+		Reason *string `json:"reason"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	txn, err := h.svc.UpdateTransaction(id, req.Amount, req.Reason)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	h.hub.Broadcast("sanders_cash_transaction", txn)
+	accounts, _ := h.svc.ListAccounts()
+	if accounts != nil {
+		h.hub.Broadcast("sanders_cash_accounts", accounts)
+	}
+
+	writeJSON(w, http.StatusOK, txn)
+}
+
 func (h *SandersCashHandler) GetTransactions(w http.ResponseWriter, r *http.Request) {
 	accountID := chi.URLParam(r, "accountId")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))

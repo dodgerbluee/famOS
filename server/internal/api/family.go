@@ -20,6 +20,7 @@ type FamilyMember struct {
 	AvatarURL string `json:"avatarUrl"`
 	Color     string `json:"color"`
 	SortOrder int    `json:"sortOrder"`
+	Birthday  string `json:"birthday"`
 	CreatedAt string `json:"createdAt"`
 }
 
@@ -31,7 +32,7 @@ type CreateFamilyMemberRequest struct {
 }
 
 func (h *FamilyHandler) List(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.db.Query(`SELECT id, name, role, avatar_url, color, sort_order, created_at FROM family_members ORDER BY sort_order, name`)
+	rows, err := h.db.Query(`SELECT id, name, role, avatar_url, color, sort_order, COALESCE(birthday, ''), created_at FROM family_members ORDER BY sort_order, name`)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list family members")
 		return
@@ -41,7 +42,7 @@ func (h *FamilyHandler) List(w http.ResponseWriter, r *http.Request) {
 	members := []FamilyMember{}
 	for rows.Next() {
 		var m FamilyMember
-		if err := rows.Scan(&m.ID, &m.Name, &m.Role, &m.AvatarURL, &m.Color, &m.SortOrder, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.Role, &m.AvatarURL, &m.Color, &m.SortOrder, &m.Birthday, &m.CreatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to scan family member")
 			return
 		}
@@ -54,8 +55,8 @@ func (h *FamilyHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *FamilyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var m FamilyMember
-	err := h.db.QueryRow(`SELECT id, name, role, avatar_url, color, sort_order, created_at FROM family_members WHERE id = ?`, id).
-		Scan(&m.ID, &m.Name, &m.Role, &m.AvatarURL, &m.Color, &m.SortOrder, &m.CreatedAt)
+	err := h.db.QueryRow(`SELECT id, name, role, avatar_url, color, sort_order, COALESCE(birthday, ''), created_at FROM family_members WHERE id = ?`, id).
+		Scan(&m.ID, &m.Name, &m.Role, &m.AvatarURL, &m.Color, &m.SortOrder, &m.Birthday, &m.CreatedAt)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "family member not found")
 		return
@@ -138,6 +139,7 @@ func (h *FamilyHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Color     *string `json:"color"`
 		AvatarURL *string `json:"avatarUrl"`
 		SortOrder *int    `json:"sortOrder"`
+		Birthday  *string `json:"birthday"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -155,6 +157,9 @@ func (h *FamilyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.SortOrder != nil {
 		h.db.Exec(`UPDATE family_members SET sort_order = ? WHERE id = ?`, *req.SortOrder, id)
+	}
+	if req.Birthday != nil {
+		h.db.Exec(`UPDATE family_members SET birthday = ? WHERE id = ?`, *req.Birthday, id)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})

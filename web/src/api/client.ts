@@ -57,6 +57,7 @@ export interface FamilyMember {
   avatarUrl: string;
   color: string;
   sortOrder: number;
+  birthday: string;
   createdAt: string;
 }
 
