@@ -177,7 +177,7 @@ func (s *RewardsService) ResolveRedemption(redemptionID, resolvedBy, status stri
 		var redemptionPhoto string
 		s.db.QueryRow(`SELECT COALESCE(photo_url, '') FROM redemptions WHERE id = ?`, redemptionID).Scan(&redemptionPhoto)
 
-		_, err = s.cash.CreateTransaction(account.ID, cost, "spend", "Redeemed: "+rewardName, resolvedBy, redemptionPhoto)
+		_, err = s.cash.CreateTransaction(account.ID, cost, "spend", "Redeemed: "+rewardName, resolvedBy, redemptionPhoto, "")
 		if err != nil {
 			return err
 		}

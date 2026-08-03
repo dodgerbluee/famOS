@@ -82,7 +82,7 @@ func (s *SandersCashService) GetAccount(memberID string) (*AccountWithMember, er
 	return &a, nil
 }
 
-func (s *SandersCashService) CreateTransaction(accountID string, amount int, txType, reason, awardedBy, photoURL string) (*Transaction, error) {
+func (s *SandersCashService) CreateTransaction(accountID string, amount int, txType, reason, awardedBy, photoURL, date string) (*Transaction, error) {
 	if txType == "spend" && amount > 0 {
 		amount = -amount
 	}
@@ -107,10 +107,17 @@ func (s *SandersCashService) CreateTransaction(accountID string, amount int, txT
 	id := uuid.New().String()
 	awardedByVal := sql.NullString{String: awardedBy, Valid: awardedBy != ""}
 
-	_, err = tx.Exec(`
-		INSERT INTO sanders_cash_transactions (id, account_id, amount, type, reason, awarded_by, photo_url)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, id, accountID, amount, txType, reason, awardedByVal, photoURL)
+	if date != "" {
+		_, err = tx.Exec(`
+			INSERT INTO sanders_cash_transactions (id, account_id, amount, type, reason, awarded_by, photo_url, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, id, accountID, amount, txType, reason, awardedByVal, photoURL, date+"T12:00:00Z")
+	} else {
+		_, err = tx.Exec(`
+			INSERT INTO sanders_cash_transactions (id, account_id, amount, type, reason, awarded_by, photo_url)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`, id, accountID, amount, txType, reason, awardedByVal, photoURL)
+	}
 	if err != nil {
 		return nil, err
 	}
