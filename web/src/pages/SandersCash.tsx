@@ -63,46 +63,41 @@ export function SandersCash() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        {accounts.map((account) => {
-          const member = members.find((m) => m.id === account.memberId);
-          const age = member ? getAge(member.birthday) : null;
+      <div className="bg-surface border border-surface-lighter rounded-2xl p-4 md:p-5 shadow-sm">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {accounts.map((account) => {
+            const member = members.find((m) => m.id === account.memberId);
+            const age = member ? getAge(member.birthday) : null;
 
-          return (
-            <button
-              key={account.memberId}
-              onClick={() => navigate(`/sanders-cash/${account.memberId}`)}
-              className="bg-surface rounded-2xl p-5 flex flex-col items-center gap-3 hover:bg-surface-light active:scale-[0.98] transition-all"
-            >
-              {member?.avatarUrl ? (
-                <img
-                  src={member.avatarUrl}
-                  alt={account.memberName}
-                  className="w-20 h-20 rounded-full object-cover"
-                />
-              ) : (
-                <div
-                  className="w-20 h-20 rounded-full flex items-center justify-center text-3xl font-bold text-bg"
-                  style={{ backgroundColor: account.memberColor }}
-                >
-                  {account.memberName[0]}
+            return (
+              <button
+                key={account.memberId}
+                onClick={() => navigate(`/sanders-cash/${account.memberId}`)}
+                className="group bg-surface border-2 border-surface-lighter rounded-xl p-4 flex items-center gap-4 text-left transition-all duration-200 hover:border-primary hover:-translate-y-1 hover:shadow-lg active:scale-[0.98]"
+              >
+                {member?.avatarUrl ? (
+                  <img src={member.avatarUrl} alt={account.memberName} className="w-20 h-20 rounded-full object-cover shadow-sm shrink-0" />
+                ) : (
+                  <div className="w-20 h-20 rounded-full flex items-center justify-center text-3xl font-bold text-bg shadow-sm shrink-0" style={{ backgroundColor: account.memberColor }}>
+                    {account.memberName[0]}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0 relative">
+                  <p className="text-text-bright font-bold text-lg">{account.memberName}</p>
+                  {age !== null && <p className="text-text-dim text-sm">Age {age}</p>}
+                  <p className="text-accent-green font-bold text-xl mt-1">
+                    ${(account.balance / 100).toFixed(2)}
+                  </p>
+                  <span className="text-primary absolute bottom-0 right-1 text-lg transition-transform duration-200 group-hover:translate-x-1">→</span>
                 </div>
-              )}
-              <div className="text-center">
-                <p className="text-text-bright font-semibold text-lg">{account.memberName}</p>
-                {age !== null && <p className="text-text-dim text-sm">Age {age}</p>}
-              </div>
-              <p className="text-accent-green font-bold text-2xl">
-                ${(account.balance / 100).toFixed(2)}
-              </p>
-            </button>
-          );
-        })}
+              </button>
+            );
+          })}
+        </div>
+        {accounts.length === 0 && (
+          <p className="text-text-dim text-center py-4">No accounts yet — add kids in Settings</p>
+        )}
       </div>
-
-      {accounts.length === 0 && (
-        <p className="text-text-dim text-center py-8">No accounts yet — add kids in Settings</p>
-      )}
 
       {showAward && (
         <AwardModal accounts={accounts} onAwarded={loadAccounts} onClose={() => setShowAward(false)} />

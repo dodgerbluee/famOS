@@ -170,6 +170,7 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 		// Sanders Cash writes
 		r.With(auth.RequirePermission("sanders_cash.award")).Post("/api/sanders-cash/transactions", cashHandler.CreateTransaction)
 		r.With(auth.RequirePermission("sanders_cash.award")).Put("/api/sanders-cash/transactions/{id}", cashHandler.UpdateTransaction)
+		r.With(auth.RequirePermission("sanders_cash.award")).Delete("/api/sanders-cash/transactions/{id}", cashHandler.DeleteTransaction)
 		r.With(auth.RequirePermission("sanders_cash.award")).Post("/api/sanders-cash/quick-award/{memberId}", cashHandler.QuickAward)
 
 		// Rewards writes
