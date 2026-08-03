@@ -110,7 +110,6 @@ export function SourceManager() {
   const [sources, setSources] = useState<CalendarSource[]>([]);
   const [editingSource, setEditingSource] = useState<CalendarSource | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [syncingId, setSyncingId] = useState<string | null>(null);
   const [syncingAll, setSyncingAll] = useState(false);
   const [syncErrors, setSyncErrors] = useState<Record<string, string>>({});
   const [form, setForm] = useState({ ...EMPTY_FORM });
@@ -124,7 +123,7 @@ export function SourceManager() {
 
   useWebSocket((msg) => {
     if (msg.type === 'calendar_synced') {
-      setSyncingId(null);
+
       setSyncingAll(false);
       load();
       const payload = msg.payload as { results?: { sourceId: string; error?: string }[] } | undefined;
@@ -140,7 +139,7 @@ export function SourceManager() {
       }
     }
     if (msg.type === 'calendar_sync_error') {
-      setSyncingId(null);
+
       setSyncingAll(false);
       load();
       const payload = msg.payload as { sourceId?: string; error?: string } | undefined;
@@ -179,14 +178,8 @@ export function SourceManager() {
     load();
   };
 
-  const handleResync = async (id: string) => {
-    if (syncingId || syncingAll) return;
-    setSyncingId(id);
-    await api.post(`/api/calendar/sources/${id}/sync`, {}).catch(() => setSyncingId(null));
-  };
-
   const handleSyncAll = async () => {
-    if (syncingId || syncingAll) return;
+    if (syncingAll) return;
     setSyncingAll(true);
     await api.post('/api/calendar/sync', {}).catch(() => setSyncingAll(false));
   };
@@ -205,7 +198,7 @@ export function SourceManager() {
         <h2 className="text-lg font-semibold text-text-bright">Calendar Sources</h2>
         <button
           onClick={handleSyncAll}
-          disabled={syncingAll || !!syncingId}
+          disabled={syncingAll}
           className="text-primary-light text-sm font-medium px-3 py-2 min-h-[44px] disabled:opacity-50"
         >
           {syncingAll ? 'Syncing...' : 'Sync All'}
@@ -234,7 +227,7 @@ export function SourceManager() {
             )}
             {!src.active && <p className="text-accent-red text-xs mt-1">Disabled</p>}
             {syncErrors[src.id] && <p className="text-accent-red text-xs mt-1 truncate">{syncErrors[src.id]}</p>}
-            {syncingId === src.id && <p className="text-accent-green text-xs mt-1">Syncing...</p>}
+
           </button>
         ))}
 
