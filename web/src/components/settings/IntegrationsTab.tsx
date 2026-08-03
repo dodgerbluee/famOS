@@ -3,9 +3,12 @@ import { api, type Camera } from '../../api/client';
 import { AIProviderSettings } from './AIProviderSettings';
 
 type Settings = Record<string, string>;
-type Section = 'frigate' | 'mqtt' | 'gatus' | 'overseerr' | 'vikunja' | 'immich' | 'weather' | 'ai';
+import type { RewardPreset } from '../sanders-cash/AwardModal';
+
+type Section = 'sanders-cash' | 'frigate' | 'mqtt' | 'gatus' | 'overseerr' | 'vikunja' | 'immich' | 'weather' | 'ai';
 
 const SECTIONS: { id: Section; label: string }[] = [
+  { id: 'sanders-cash', label: 'Sanders Cash' },
   { id: 'frigate', label: 'Frigate' },
   { id: 'mqtt', label: 'MQTT' },
   { id: 'gatus', label: 'Gatus' },
@@ -67,6 +70,15 @@ export function IntegrationsTab() {
   const [motionAlertCameras, setMotionAlertCameras] = useState<string[]>([]);
   const [availableCameras, setAvailableCameras] = useState<Camera[]>([]);
   const [cameraFitModes, setCameraFitModes] = useState<Record<string, 'cover' | 'contain'>>({});
+  const [cashPresets, setCashPresets] = useState<RewardPreset[]>([
+    { reason: 'Great job!', amount: 500 },
+    { reason: 'Chores done', amount: 500 },
+    { reason: 'Being kind', amount: 1000 },
+    { reason: 'Good grades', amount: 2000 },
+    { reason: 'Helping out', amount: 500 },
+  ]);
+  const [cashSaving, setCashSaving] = useState(false);
+  const [cashSaved, setCashSaved] = useState(false);
 
   useEffect(() => {
     api.get<Settings>('/api/settings').then((s) => {
@@ -98,6 +110,12 @@ export function IntegrationsTab() {
       setImmichApiKey(s.immich_api_key || '');
       setScreensaverAlbumId(s.screensaver_album_id || '');
       setScreensaverTimeout(s.screensaver_timeout || '300');
+      if (s.sanders_cash_presets) {
+        try {
+          const parsed = JSON.parse(s.sanders_cash_presets) as RewardPreset[];
+          if (parsed.length > 0) setCashPresets(parsed);
+        } catch { /* use defaults */ }
+      }
     }).catch(() => {});
 
     api.get<Camera[]>('/api/cameras').then(setAvailableCameras).catch(() => {});
@@ -186,8 +204,77 @@ export function IntegrationsTab() {
     </button>
   );
 
+  const saveCashPresets = async () => {
+    setCashSaving(true);
+    setCashSaved(false);
+    try {
+      await api.put('/api/settings', {
+        sanders_cash_presets: JSON.stringify(cashPresets.filter((p) => p.reason.trim())),
+      });
+      setCashSaved(true);
+      setTimeout(() => setCashSaved(false), 3000);
+    } finally {
+      setCashSaving(false);
+    }
+  };
+
   const renderContent = () => {
     switch (active) {
+      case 'sanders-cash':
+        return (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-text-bright">Award Presets</h3>
+            <p className="text-text-dim text-sm">Configure quick-select reasons and their default amounts for the Award modal.</p>
+            <div className="space-y-2">
+              {cashPresets.map((preset, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={preset.reason}
+                    onChange={(e) => {
+                      const updated = [...cashPresets];
+                      updated[i] = { ...updated[i], reason: e.target.value };
+                      setCashPresets(updated);
+                    }}
+                    placeholder="Reason"
+                    className={`flex-1 ${inputClass}`}
+                  />
+                  <div className="relative w-24 shrink-0">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dim font-bold">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={(preset.amount / 100).toFixed(2)}
+                      onChange={(e) => {
+                        const updated = [...cashPresets];
+                        updated[i] = { ...updated[i], amount: Math.round((parseFloat(e.target.value) || 0) * 100) };
+                        setCashPresets(updated);
+                      }}
+                      className={`pl-7 ${inputClass}`}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCashPresets(cashPresets.filter((_, j) => j !== i))}
+                    className="text-accent-red text-lg min-w-[44px] min-h-[44px] flex items-center justify-center shrink-0"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setCashPresets([...cashPresets, { reason: '', amount: 500 }])}
+              className="text-primary-light text-sm font-medium min-h-[44px]"
+            >
+              + Add Preset
+            </button>
+            {saveBtn(saveCashPresets, cashSaving, cashSaved, 'Save Presets')}
+          </div>
+        );
+
       case 'frigate':
         return (
           <div className="space-y-4">

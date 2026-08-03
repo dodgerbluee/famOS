@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { api, type AccountWithMember, type FamilyMember } from '../api/client';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { AwardModal } from '../components/sanders-cash/AwardModal';
-import { AdjustModal } from '../components/sanders-cash/AdjustModal';
 
 function getAge(birthday: string): number | null {
   if (!birthday) return null;
@@ -19,7 +18,6 @@ export function SandersCash() {
   const [accounts, setAccounts] = useState<AccountWithMember[]>([]);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [showAward, setShowAward] = useState(false);
-  const [showAdjust, setShowAdjust] = useState(false);
   const navigate = useNavigate();
 
   const loadAccounts = useCallback(() => {
@@ -46,13 +44,7 @@ export function SandersCash() {
             onClick={() => setShowAward(true)}
             className="bg-primary text-white text-sm font-medium px-3 py-2 min-h-[44px] rounded-xl active:scale-95 transition-transform"
           >
-            + Award
-          </button>
-          <button
-            onClick={() => setShowAdjust(true)}
-            className="bg-surface-light text-text-bright text-sm font-medium px-3 py-2 min-h-[44px] rounded-xl active:scale-95 transition-transform"
-          >
-            Adjust
+            + Award / Adjust
           </button>
           <button
             onClick={() => navigate('/sanders-cash/store')}
@@ -101,9 +93,6 @@ export function SandersCash() {
 
       {showAward && (
         <AwardModal accounts={accounts} onAwarded={loadAccounts} onClose={() => setShowAward(false)} />
-      )}
-      {showAdjust && (
-        <AdjustModal accounts={accounts} onAdjusted={loadAccounts} onClose={() => setShowAdjust(false)} />
       )}
     </div>
   );
