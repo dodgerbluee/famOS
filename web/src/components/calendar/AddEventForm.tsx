@@ -77,13 +77,14 @@ function Dropdown({ value, options, onChange, disabled, placeholder }: {
 export function AddEventForm({ defaultDate, sources, onCreated, onCancel }: AddEventFormProps) {
   const timezone = useTimezone();
   const dateStr = getDateKey(defaultDate, timezone);
-  const writableSources = sources.filter((source) => source.type === 'caldav' && source.active);
+  const activeSources = sources.filter((source) => source.active);
 
-  const [sourceId, setSourceId] = useState(writableSources[0]?.id ?? '');
+  const [sourceId, setSourceId] = useState(activeSources[0]?.id ?? '');
   const selectedSource = useMemo(
-    () => writableSources.find((source) => source.id === sourceId) ?? null,
-    [sourceId, writableSources],
+    () => activeSources.find((source) => source.id === sourceId) ?? null,
+    [sourceId, activeSources],
   );
+  const isCaldav = selectedSource?.type === 'caldav';
   const [remoteCalendars, setRemoteCalendars] = useState<RemoteCalendar[]>([]);
   const [selectedCalendarName, setSelectedCalendarName] = useState('');
   const [loadingCalendars, setLoadingCalendars] = useState(false);
@@ -99,7 +100,7 @@ export function AddEventForm({ defaultDate, sources, onCreated, onCancel }: AddE
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!sourceId) {
+    if (!sourceId || !isCaldav) {
       setRemoteCalendars([]);
       setSelectedCalendarName('');
       return;
@@ -120,7 +121,7 @@ export function AddEventForm({ defaultDate, sources, onCreated, onCancel }: AddE
         setError(e instanceof Error ? e.message : 'Failed to load calendars');
       })
       .finally(() => setLoadingCalendars(false));
-  }, [sourceId, selectedSource?.calendarName]);
+  }, [sourceId, isCaldav, selectedSource?.calendarName]);
 
   const handleSubmit = async () => {
     if (!title.trim()) {
@@ -131,7 +132,7 @@ export function AddEventForm({ defaultDate, sources, onCreated, onCancel }: AddE
       setError('Choose a calendar');
       return;
     }
-    if (remoteCalendars.length > 0 && !selectedCalendarName) {
+    if (isCaldav && remoteCalendars.length > 0 && !selectedCalendarName) {
       setError('Choose a calendar option');
       return;
     }
@@ -170,7 +171,7 @@ export function AddEventForm({ defaultDate, sources, onCreated, onCancel }: AddE
     }
   };
 
-  const sourceOptions: DropdownOption[] = writableSources.map((s) => ({ value: s.id, label: s.name }));
+  const sourceOptions: DropdownOption[] = activeSources.map((s) => ({ value: s.id, label: s.name }));
   const calendarOptions: DropdownOption[] = remoteCalendars.map((c) => ({ value: c.name, label: c.name }));
 
   return (
@@ -203,7 +204,7 @@ export function AddEventForm({ defaultDate, sources, onCreated, onCancel }: AddE
           />
         </div>
 
-        {sourceId && (
+        {sourceId && isCaldav && (
           <div>
             <label className="block text-sm text-text-dim mb-1">Calendar Option</label>
             <Dropdown
@@ -339,7 +340,7 @@ export function AddEventForm({ defaultDate, sources, onCreated, onCancel }: AddE
         <div className="flex gap-2">
           <button
             type="submit"
-            disabled={saving || writableSources.length === 0 || loadingCalendars || (remoteCalendars.length > 0 && !selectedCalendarName)}
+            disabled={saving || activeSources.length === 0 || !sourceId || (isCaldav && loadingCalendars) || (isCaldav && remoteCalendars.length > 0 && !selectedCalendarName)}
             className="flex-1 bg-primary text-white font-bold py-3 rounded-xl min-h-[48px] active:scale-95 transition-transform disabled:opacity-50"
           >
             {saving ? 'Creating...' : 'Add Event'}

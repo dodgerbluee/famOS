@@ -328,23 +328,52 @@ func (s *CalendarService) CreateEvent(ctx context.Context, sourceID, calendarNam
 	if !src.Active {
 		return nil, fmt.Errorf("selected calendar is inactive")
 	}
-	if src.Type != "caldav" {
-		return nil, fmt.Errorf("selected calendar is read-only")
+	if src.Type == "caldav" {
+		targetCalendarName := src.CalendarName
+		if strings.TrimSpace(calendarName) != "" {
+			targetCalendarName = strings.TrimSpace(calendarName)
+		}
+		_ = s.syncResolvedCalendarMetadata(sourceID, src.URL, src.Username, src.Password, targetCalendarName, src.Name)
+
+		parsed, err := s.client.CreateCalDAVEvent(ctx, src.URL, src.Username, src.Password, targetCalendarName, src.Name, title, description, location, startAt, endAt, allDay)
+		if err != nil {
+			return nil, err
+		}
+
+		if err := s.upsertEvent(sourceID, parsed); err != nil {
+			return nil, err
+		}
+
+		var ev CalendarEvent
+		err = s.db.QueryRow(`
+			SELECT e.id, e.source_id, e.external_id, e.title, e.description, e.location,
+			       e.start_at, e.end_at, e.all_day, e.recurrence_rule, e.ai_enrichment,
+			       cs.color, cs.name,
+			       COALESCE(NULLIF(e.calendar_name, ''), cs.calendar_name),
+			       COALESCE(NULLIF(e.calendar_color, ''), cs.color)
+			FROM calendar_events e
+			JOIN calendar_sources cs ON cs.id = e.source_id
+			WHERE e.source_id = ? AND e.external_id = ?
+		`, sourceID, parsed.UID).Scan(
+			&ev.ID, &ev.SourceID, &ev.ExternalID, &ev.Title, &ev.Description, &ev.Location,
+			&ev.StartAt, &ev.EndAt, &ev.AllDay, &ev.RecurrenceRule, &ev.AIEnrichment,
+			&ev.SourceColor, &ev.SourceName, &ev.SourceCalendarName, &ev.SourceCalendarColor,
+		)
+		if err != nil {
+			return nil, err
+		}
+		return &ev, nil
 	}
 
-	targetCalendarName := src.CalendarName
-	if strings.TrimSpace(calendarName) != "" {
-		targetCalendarName = strings.TrimSpace(calendarName)
-	}
-	_ = s.syncResolvedCalendarMetadata(sourceID, src.URL, src.Username, src.Password, targetCalendarName, src.Name)
-
-	parsed, err := s.client.CreateCalDAVEvent(ctx, src.URL, src.Username, src.Password, targetCalendarName, src.Name, title, description, location, startAt, endAt, allDay)
+	uid := uuid.New().String()
+	eventID := uuid.New().String()
+	_, err = s.db.Exec(`
+		INSERT INTO calendar_events (id, source_id, external_id, title, description, location, start_at, end_at, all_day, calendar_name)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		eventID, sourceID, uid, title, description, location, startAt, endAt, allDay, src.Name,
+	)
 	if err != nil {
-		return nil, err
-	}
-
-	if err := s.upsertEvent(sourceID, parsed); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to save event: %w", err)
 	}
 
 	var ev CalendarEvent
@@ -356,8 +385,8 @@ func (s *CalendarService) CreateEvent(ctx context.Context, sourceID, calendarNam
 		       COALESCE(NULLIF(e.calendar_color, ''), cs.color)
 		FROM calendar_events e
 		JOIN calendar_sources cs ON cs.id = e.source_id
-		WHERE e.source_id = ? AND e.external_id = ?
-	`, sourceID, parsed.UID).Scan(
+		WHERE e.id = ?
+	`, eventID).Scan(
 		&ev.ID, &ev.SourceID, &ev.ExternalID, &ev.Title, &ev.Description, &ev.Location,
 		&ev.StartAt, &ev.EndAt, &ev.AllDay, &ev.RecurrenceRule, &ev.AIEnrichment,
 		&ev.SourceColor, &ev.SourceName, &ev.SourceCalendarName, &ev.SourceCalendarColor,
