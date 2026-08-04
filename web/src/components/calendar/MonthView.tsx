@@ -10,7 +10,6 @@ interface MonthViewProps {
   onEventSelect?: (event: CalendarEvent) => void;
 }
 
-const MAX_VISIBLE_SINGLE = 2;
 
 interface EventSegment {
   event: CalendarEvent;
@@ -153,8 +152,6 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
                   const dayStr = getDateKey(day, timezone);
                   const daySingleEvents = singleDay.filter((ev) => eventSpansDate(ev, dayStr, timezone));
                   const isToday = dayStr === today;
-                  const visible = daySingleEvents.slice(0, MAX_VISIBLE_SINGLE);
-                  const overflow = daySingleEvents.length - MAX_VISIBLE_SINGLE;
 
                   return (
                     <div
@@ -171,8 +168,8 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
                       <span className={`text-xs font-medium px-1 ${isToday ? 'text-primary-light font-bold' : 'text-text-dim'}`}>
                         {day.getDate()}
                       </span>
-                      <div className="flex-1 mt-0.5 space-y-px overflow-hidden">
-                        {visible.map((ev) => (
+                      <div className="flex-1 mt-0.5 space-y-px min-h-0">
+                        {daySingleEvents.map((ev) => (
                           <button
                             key={ev.id}
                             onClick={(e) => { e.stopPropagation(); onEventSelect?.(ev); }}
@@ -184,7 +181,6 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
                             </span>
                           </button>
                         ))}
-                        {overflow > 0 && <p className="text-[10px] text-text-dim px-1">+{overflow} more</p>}
                       </div>
                     </div>
                   );
