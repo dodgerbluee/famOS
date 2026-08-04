@@ -240,6 +240,7 @@ export function Calendar() {
         <EventDetail
           event={selectedEvent}
           onClose={() => setSelectedEvent(null)}
+          onUpdated={loadEvents}
         />
       )}
     </div>

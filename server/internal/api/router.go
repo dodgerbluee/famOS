@@ -187,6 +187,7 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 		r.With(auth.RequirePermission("calendar.edit")).Put("/api/calendar/sources/{id}", calendarHandler.UpdateSource)
 		r.With(auth.RequirePermission("calendar.edit")).Delete("/api/calendar/sources/{id}", calendarHandler.DeleteSource)
 		r.With(auth.RequirePermission("calendar.edit")).Post("/api/calendar/events", calendarHandler.CreateEvent)
+		r.With(auth.RequirePermission("calendar.edit")).Put("/api/calendar/events/{id}", calendarHandler.UpdateEvent)
 		r.With(auth.RequirePermission("calendar.edit")).Delete("/api/calendar/events/{id}", calendarHandler.DeleteEvent)
 		r.With(auth.RequirePermission("calendar.edit")).Post("/api/calendar/sync", calendarHandler.SyncNow)
 
