@@ -251,6 +251,54 @@ func (h *CalendarHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, ev)
 }
 
+func (h *CalendarHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Title       *string `json:"title"`
+		Description *string `json:"description"`
+		Location    *string `json:"location"`
+		StartAt     *string `json:"startAt"`
+		EndAt       *string `json:"endAt"`
+		AllDay      *bool   `json:"allDay"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	var startAt, endAt *time.Time
+	if req.StartAt != nil {
+		t, err := time.Parse(time.RFC3339, *req.StartAt)
+		if err != nil {
+			t, err = time.ParseInLocation("2006-01-02T15:04", *req.StartAt, h.location)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid startAt")
+				return
+			}
+		}
+		startAt = &t
+	}
+	if req.EndAt != nil {
+		t, err := time.Parse(time.RFC3339, *req.EndAt)
+		if err != nil {
+			t, err = time.ParseInLocation("2006-01-02T15:04", *req.EndAt, h.location)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid endAt")
+				return
+			}
+		}
+		endAt = &t
+	}
+
+	ev, err := h.svc.UpdateEvent(id, req.Title, req.Description, req.Location, startAt, endAt, req.AllDay)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to update event: "+err.Error())
+		return
+	}
+	h.hub.Broadcast("calendar_synced", map[string]string{"status": "event_updated"})
+	writeJSON(w, http.StatusOK, ev)
+}
+
 func (h *CalendarHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := h.svc.DeleteEvent(id); err != nil {

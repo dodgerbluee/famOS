@@ -370,7 +370,7 @@ func (s *CalendarService) CreateEvent(ctx context.Context, sourceID, calendarNam
 	_, err = s.db.Exec(`
 		INSERT INTO calendar_events (id, source_id, external_id, title, description, location, start_at, end_at, all_day, calendar_name)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		eventID, sourceID, uid, title, description, location, startAt, endAt, allDay, src.Name,
+		eventID, sourceID, uid, title, description, location, startAt.Format(time.RFC3339), endAt.Format(time.RFC3339), allDay, src.Name,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save event: %w", err)
@@ -409,6 +409,59 @@ func (s *CalendarService) syncResolvedCalendarMetadata(sourceID, endpoint, usern
 		}
 	}
 	return nil
+}
+
+func (s *CalendarService) UpdateEvent(id string, title, description, location *string, startAt, endAt *time.Time, allDay *bool) (*CalendarEvent, error) {
+	if title != nil {
+		if _, err := s.db.Exec(`UPDATE calendar_events SET title = ? WHERE id = ?`, *title, id); err != nil {
+			return nil, err
+		}
+	}
+	if description != nil {
+		if _, err := s.db.Exec(`UPDATE calendar_events SET description = ? WHERE id = ?`, *description, id); err != nil {
+			return nil, err
+		}
+	}
+	if location != nil {
+		if _, err := s.db.Exec(`UPDATE calendar_events SET location = ? WHERE id = ?`, *location, id); err != nil {
+			return nil, err
+		}
+	}
+	if startAt != nil {
+		if _, err := s.db.Exec(`UPDATE calendar_events SET start_at = ? WHERE id = ?`, startAt.Format(time.RFC3339), id); err != nil {
+			return nil, err
+		}
+	}
+	if endAt != nil {
+		if _, err := s.db.Exec(`UPDATE calendar_events SET end_at = ? WHERE id = ?`, endAt.Format(time.RFC3339), id); err != nil {
+			return nil, err
+		}
+	}
+	if allDay != nil {
+		if _, err := s.db.Exec(`UPDATE calendar_events SET all_day = ? WHERE id = ?`, *allDay, id); err != nil {
+			return nil, err
+		}
+	}
+
+	var ev CalendarEvent
+	err := s.db.QueryRow(`
+		SELECT e.id, e.source_id, e.external_id, e.title, e.description, e.location,
+		       e.start_at, e.end_at, e.all_day, e.recurrence_rule, e.ai_enrichment,
+		       cs.color, cs.name,
+		       COALESCE(NULLIF(e.calendar_name, ''), cs.calendar_name),
+		       COALESCE(NULLIF(e.calendar_color, ''), cs.color)
+		FROM calendar_events e
+		JOIN calendar_sources cs ON cs.id = e.source_id
+		WHERE e.id = ?
+	`, id).Scan(
+		&ev.ID, &ev.SourceID, &ev.ExternalID, &ev.Title, &ev.Description, &ev.Location,
+		&ev.StartAt, &ev.EndAt, &ev.AllDay, &ev.RecurrenceRule, &ev.AIEnrichment,
+		&ev.SourceColor, &ev.SourceName, &ev.SourceCalendarName, &ev.SourceCalendarColor,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &ev, nil
 }
 
 func (s *CalendarService) DeleteEvent(id string) error {
