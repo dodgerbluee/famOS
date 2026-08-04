@@ -10,7 +10,6 @@ interface MonthViewProps {
   onEventSelect?: (event: CalendarEvent) => void;
 }
 
-
 interface EventSegment {
   event: CalendarEvent;
   startCol: number;
@@ -97,8 +96,27 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
     return assignLanes(raw);
   }
 
+  function getMaxEventsForDay(week: (Date | null)[]): number {
+    let max = 0;
+    for (const day of week) {
+      if (!day) continue;
+      const dayStr = getDateKey(day, timezone);
+      const count = singleDay.filter((ev) => eventSpansDate(ev, dayStr, timezone)).length;
+      if (count > max) max = count;
+    }
+    return max;
+  }
+
   const prevMonth = () => onDateChange?.(addMonthsInTimezone(date, -1, timezone));
   const nextMonth = () => onDateChange?.(addMonthsInTimezone(date, 1, timezone));
+
+  const rowTemplate = weeks.map((week) => {
+    const segments = getWeekSegments(week);
+    const laneCount = segments.length > 0 ? Math.max(...segments.map((s) => s.lane)) + 1 : 0;
+    const maxEvents = getMaxEventsForDay(week);
+    const contentLines = laneCount + maxEvents;
+    return contentLines > 0 ? `minmax(${20 + contentLines * 18}px, 1fr)` : 'minmax(40px, 1fr)';
+  }).join(' ');
 
   return (
     <div className="flex flex-col h-full">
@@ -116,13 +134,13 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
         ))}
       </div>
 
-      <div className="flex-1 min-h-0 flex flex-col space-y-1">
+      <div className="flex-1 min-h-0 grid gap-1" style={{ gridTemplateRows: rowTemplate }}>
         {weeks.map((week, weekIdx) => {
           const segments = getWeekSegments(week);
           const laneCount = segments.length > 0 ? Math.max(...segments.map((s) => s.lane)) + 1 : 0;
 
           return (
-            <div key={weekIdx} className="flex-1 flex flex-col min-h-0">
+            <div key={weekIdx} className="flex flex-col min-h-0">
               {laneCount > 0 && (
                 <div className="grid grid-cols-7 gap-x-1 mb-0.5" style={{ gridTemplateRows: `repeat(${laneCount}, 20px)` }}>
                   {segments.map((seg) => (
@@ -168,7 +186,7 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
                       <span className={`text-xs font-medium px-1 ${isToday ? 'text-primary-light font-bold' : 'text-text-dim'}`}>
                         {day.getDate()}
                       </span>
-                      <div className="flex-1 mt-0.5 space-y-px min-h-0">
+                      <div className="flex-1 mt-0.5 space-y-px">
                         {daySingleEvents.map((ev) => (
                           <button
                             key={ev.id}
