@@ -280,3 +280,26 @@ export interface ChoreCompletion {
   completedName: string;
   completedAt: string;
 }
+
+export interface ChoreTemplate {
+  id: string;
+  title: string;
+  icon: string;
+  recurrence: string;
+  rewardAmount: number;
+  isShared: boolean;
+  assignedMembers: string[];
+  vikunjaLabel: string;
+  active: boolean;
+  createdAt: string;
+  tasks?: { memberId: string; vikunjaTaskId: number; done: boolean }[];
+}
+
+export interface VikunjaTaskSimple {
+  id: number;
+  title: string;
+  done: boolean;
+  dueDate: string;
+  priority: number;
+  projectId: number;
+}

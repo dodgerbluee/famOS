@@ -15,14 +15,15 @@ import (
 type BroadcastFunc func(msgType string, payload any)
 
 type Scheduler struct {
-	calendar  *service.CalendarService
-	weather   *service.WeatherService
-	cash      *service.SandersCashService
-	engine    *ai.Engine
-	batch     *service.BatchService
-	db        *db.DB
-	broadcast BroadcastFunc
-	timezone  string
+	calendar    *service.CalendarService
+	weather     *service.WeatherService
+	cash        *service.SandersCashService
+	engine      *ai.Engine
+	batch       *service.BatchService
+	chorePoller *service.ChorePollerService
+	db          *db.DB
+	broadcast   BroadcastFunc
+	timezone    string
 }
 
 func NewScheduler(
@@ -31,19 +32,21 @@ func NewScheduler(
 	cash *service.SandersCashService,
 	engine *ai.Engine,
 	batch *service.BatchService,
+	chorePoller *service.ChorePollerService,
 	database *db.DB,
 	broadcast BroadcastFunc,
 	timezone string,
 ) *Scheduler {
 	return &Scheduler{
-		calendar:  calendar,
-		weather:   weather,
-		cash:      cash,
-		engine:    engine,
-		batch:     batch,
-		db:        database,
-		broadcast: broadcast,
-		timezone:  timezone,
+		calendar:    calendar,
+		weather:     weather,
+		cash:        cash,
+		engine:      engine,
+		batch:       batch,
+		chorePoller: chorePoller,
+		db:          database,
+		broadcast:   broadcast,
+		timezone:    timezone,
 	}
 }
 
@@ -51,6 +54,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 	go s.runCalendarSync(ctx)
 	go s.runDailyBriefing(ctx)
 	go s.runSessionCleanup(ctx)
+	if s.chorePoller != nil {
+		go s.runChorePoller(ctx)
+	}
 }
 
 func (s *Scheduler) runSessionCleanup(ctx context.Context) {
@@ -81,6 +87,22 @@ func (s *Scheduler) runCalendarSync(ctx context.Context) {
 			log.Println("running scheduled calendar sync...")
 			results := s.calendar.SyncAllSources(ctx)
 			s.broadcast("calendar_synced", map[string]any{"status": "complete", "results": results})
+		}
+	}
+}
+
+func (s *Scheduler) runChorePoller(ctx context.Context) {
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := s.chorePoller.Poll(ctx); err != nil {
+				log.Printf("chore poller error: %v", err)
+			}
 		}
 	}
 }

@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { api, type Camera } from '../../api/client';
 import { AIProviderSettings } from './AIProviderSettings';
+import { useCurrencyName, invalidateCurrencyNameCache } from '../../hooks/useCurrencyName';
 
 type Settings = Record<string, string>;
 import type { RewardPreset } from '../sanders-cash/AwardModal';
 
-type Section = 'sanders-cash' | 'frigate' | 'mqtt' | 'gatus' | 'overseerr' | 'vikunja' | 'immich' | 'weather' | 'ai';
+type Section = 'family' | 'sanders-cash' | 'frigate' | 'mqtt' | 'gatus' | 'overseerr' | 'vikunja' | 'immich' | 'weather' | 'ai';
 
 const SECTIONS: { id: Section; label: string }[] = [
-  { id: 'sanders-cash', label: 'Sanders Cash' },
+  { id: 'family', label: 'Family' },
+  { id: 'sanders-cash', label: 'Cash' },
   { id: 'frigate', label: 'Frigate' },
   { id: 'mqtt', label: 'MQTT' },
   { id: 'gatus', label: 'Gatus' },
@@ -32,7 +34,12 @@ function parseCameraFitModes(raw: string): Record<string, 'cover' | 'contain'> {
 }
 
 export function IntegrationsTab() {
-  const [active, setActive] = useState<Section>('frigate');
+  const currencyName = useCurrencyName();
+  const [active, setActive] = useState<Section>('family');
+  const [familyName, setFamilyName] = useState('');
+  const [currencyNameOverride, setCurrencyNameOverride] = useState('');
+  const [familySaving, setFamilySaving] = useState(false);
+  const [familySaved, setFamilySaved] = useState(false);
   const [frigateUrl, setFrigateUrl] = useState('');
   const [frigateUser, setFrigateUser] = useState('');
   const [frigatePass, setFrigatePass] = useState('');
@@ -82,6 +89,8 @@ export function IntegrationsTab() {
 
   useEffect(() => {
     api.get<Settings>('/api/settings').then((s) => {
+      setFamilyName(s.family_name || '');
+      setCurrencyNameOverride(s.currency_name || '');
       setFrigateUrl(s.frigate_url || '');
       setFrigateUser(s.frigate_username || '');
       setFrigatePass(s.frigate_password || '');
@@ -218,8 +227,42 @@ export function IntegrationsTab() {
     }
   };
 
+  const saveFamily = async () => {
+    setFamilySaving(true);
+    setFamilySaved(false);
+    try {
+      await api.put('/api/settings', {
+        family_name: familyName,
+        currency_name: currencyNameOverride,
+      });
+      invalidateCurrencyNameCache();
+      setFamilySaved(true);
+      setTimeout(() => setFamilySaved(false), 3000);
+    } finally {
+      setFamilySaving(false);
+    }
+  };
+
   const renderContent = () => {
     switch (active) {
+      case 'family':
+        return (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-text-bright">Family Settings</h3>
+            <div>
+              <label className="block text-sm text-text-dim mb-1">Family Name</label>
+              <input type="text" value={familyName} onChange={(e) => setFamilyName(e.target.value)} placeholder="e.g. Sanders" className={inputClass} />
+              <p className="text-text-dim text-xs mt-1">Used to derive the currency name (e.g. "Sanders Cash").</p>
+            </div>
+            <div>
+              <label className="block text-sm text-text-dim mb-1">Currency Name (optional)</label>
+              <input type="text" value={currencyNameOverride} onChange={(e) => setCurrencyNameOverride(e.target.value)} placeholder={familyName ? `${familyName} Cash` : 'Family Cash'} className={inputClass} />
+              <p className="text-text-dim text-xs mt-1">Leave blank to auto-derive from family name. Currently: {currencyName}</p>
+            </div>
+            {saveBtn(saveFamily, familySaving, familySaved, 'Save Family')}
+          </div>
+        );
+
       case 'sanders-cash':
         return (
           <div className="space-y-4">

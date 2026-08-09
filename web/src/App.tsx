@@ -12,6 +12,7 @@ import { Settings } from './pages/Settings';
 import { Weather } from './pages/Weather';
 import { BatchProcesses } from './pages/BatchProcesses';
 import { Chores } from './pages/Chores';
+import { Tasks } from './pages/Tasks';
 import { Login } from './pages/Login';
 import { Setup } from './pages/Setup';
 import { JoinFamily } from './pages/JoinFamily';
@@ -87,6 +88,7 @@ export default function App() {
             <Route path="/sanders-cash/:memberId" element={<SandersCashKid />} />
             <Route path="/weather" element={<Weather />} />
             <Route path="/chores" element={<Chores />} />
+            <Route path="/tasks" element={<Tasks />} />
             <Route path="/batch" element={<BatchProcesses />} />
             <Route path="/settings" element={<Settings />} />
           </Route>

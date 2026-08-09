@@ -55,6 +55,7 @@ func (d *DB) Migrate() error {
 	renameColumnIfExists(d, "family_members", "email", "username")
 	addColumnIfNotExists(d, "family_members", "username", "TEXT DEFAULT ''")
 	addColumnIfNotExists(d, "family_members", "birthday", "TEXT DEFAULT ''")
+	addColumnIfNotExists(d, "family_members", "vikunja_project_id", "INTEGER DEFAULT 0")
 
 	// Create default family for existing members
 	var memberCount int
@@ -333,5 +334,33 @@ CREATE TABLE IF NOT EXISTS chore_completions (
 	date_key TEXT NOT NULL,
 	completed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 	UNIQUE(chore_id, completed_by, date_key)
+);
+
+CREATE TABLE IF NOT EXISTS chore_templates (
+	id TEXT PRIMARY KEY,
+	title TEXT NOT NULL,
+	icon TEXT DEFAULT '',
+	recurrence TEXT NOT NULL DEFAULT 'daily' CHECK(recurrence IN ('daily', 'weekly', 'once')),
+	reward_amount INTEGER NOT NULL DEFAULT 0,
+	is_shared BOOLEAN DEFAULT FALSE,
+	assigned_members TEXT NOT NULL DEFAULT '[]',
+	vikunja_label TEXT NOT NULL DEFAULT '',
+	active BOOLEAN DEFAULT TRUE,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS chore_template_tasks (
+	template_id TEXT NOT NULL REFERENCES chore_templates(id) ON DELETE CASCADE,
+	member_id TEXT NOT NULL REFERENCES family_members(id) ON DELETE CASCADE,
+	vikunja_task_id INTEGER NOT NULL,
+	PRIMARY KEY (template_id, member_id)
+);
+
+CREATE TABLE IF NOT EXISTS chore_completion_log (
+	id TEXT PRIMARY KEY,
+	vikunja_task_id INTEGER NOT NULL UNIQUE,
+	template_id TEXT NOT NULL REFERENCES chore_templates(id) ON DELETE CASCADE,
+	member_id TEXT NOT NULL REFERENCES family_members(id) ON DELETE CASCADE,
+	processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `

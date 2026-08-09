@@ -21,12 +21,15 @@ import (
 )
 
 type Services struct {
-	Calendar *service.CalendarService
-	Cash     *service.SandersCashService
-	Rewards  *service.RewardsService
-	Weather  *service.WeatherService
-	AI       *ai.Engine
-	Frigate  *frigate.Client
+	Calendar       *service.CalendarService
+	Cash           *service.SandersCashService
+	Rewards        *service.RewardsService
+	Weather        *service.WeatherService
+	AI             *ai.Engine
+	Frigate        *frigate.Client
+	Vikunja        *service.VikunjaService
+	Currency       *service.CurrencyService
+	ChoreTemplates *service.ChoreTemplateService
 }
 
 func NewServices(database *db.DB, cfg *config.Config) *Services {
@@ -35,13 +38,17 @@ func NewServices(database *db.DB, cfg *config.Config) *Services {
 		loc = time.UTC
 	}
 	cash := service.NewSandersCashService(database)
+	vikunjaSvc := service.NewVikunjaService(database)
 	return &Services{
-		Calendar: service.NewCalendarService(database, loc),
-		Cash:     cash,
-		Rewards:  service.NewRewardsService(database, cash),
-		Weather:  service.NewWeatherService(database, cfg.LocationLat, cfg.LocationLon, cfg.Timezone),
-		AI:       ai.NewEngine(cfg, database),
-		Frigate:  frigate.NewClient(cfg.FrigateURL),
+		Calendar:       service.NewCalendarService(database, loc),
+		Cash:           cash,
+		Rewards:        service.NewRewardsService(database, cash),
+		Weather:        service.NewWeatherService(database, cfg.LocationLat, cfg.LocationLon, cfg.Timezone),
+		AI:             ai.NewEngine(cfg, database),
+		Frigate:        frigate.NewClient(cfg.FrigateURL),
+		Vikunja:        vikunjaSvc,
+		Currency:       service.NewCurrencyService(database),
+		ChoreTemplates: service.NewChoreTemplateService(database, vikunjaSvc),
 	}
 }
 
@@ -60,7 +67,7 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 	}))
 
 	// Handlers
-	familyHandler := &FamilyHandler{db: database}
+	familyHandler := &FamilyHandler{db: database, vikunja: svc.Vikunja, choreTemplates: svc.ChoreTemplates}
 	authHandler := &AuthHandler{db: database, cfg: cfg}
 	inviteHandler := NewInviteHandler(database, cfg)
 	cashHandler := NewSandersCashHandler(svc.Cash, hub)
@@ -73,13 +80,15 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 	weatherHandler := NewWeatherHandler(svc.Weather)
 	aiHandler := NewAIHandler(svc.AI, svc.Weather, svc.Calendar, svc.Cash, loc)
 	camerasHandler := NewCamerasHandler(svc.Frigate, hub)
-	settingsHandler := &SettingsHandler{db: database, frigate: svc.Frigate}
+	settingsHandler := &SettingsHandler{db: database, frigate: svc.Frigate, currency: svc.Currency}
 	aiProvidersHandler := NewAIProvidersHandler(database, svc.AI, cfg)
 	gatusHandler := NewGatusHandler(service.NewGatusService(database))
 	seerrHandler := NewSeerrHandler(service.NewSeerrService(database))
 	batchHandler := NewBatchHandler(batchSvc, scheduler)
 	vikunjaHandler := NewVikunjaHandler(service.NewVikunjaService(database))
 	choresHandler := NewChoresHandler(service.NewChoresService(database, svc.Cash), hub)
+	choreTemplatesHandler := NewChoreTemplatesHandler(svc.ChoreTemplates, hub)
+	tasksHandler := NewTasksHandler(svc.Vikunja, database)
 	uploadsHandler := NewUploadsHandler(filepath.Dir(cfg.DatabasePath))
 	immichHandler := NewImmichHandler(service.NewImmichService(database))
 
@@ -141,6 +150,11 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 		r.Get("/api/vikunja/projects", vikunjaHandler.GetProjects)
 
 		r.Get("/api/chores", choresHandler.List)
+		r.Get("/api/chore-templates", choreTemplatesHandler.List)
+
+		r.Get("/api/currency-name", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]string{"name": svc.Currency.GetCurrencyName()})
+		})
 
 		r.Get("/api/immich/album", immichHandler.GetAlbum)
 		r.Get("/api/immich/assets/{id}", immichHandler.ProxyAsset)
@@ -191,12 +205,23 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 		r.With(auth.RequirePermission("calendar.edit")).Delete("/api/calendar/events/{id}", calendarHandler.DeleteEvent)
 		r.With(auth.RequirePermission("calendar.edit")).Post("/api/calendar/sync", calendarHandler.SyncNow)
 
-		// Chores writes
+		// Chores writes (legacy)
 		r.With(auth.RequirePermission("chores.manage")).Post("/api/chores", choresHandler.Create)
 		r.With(auth.RequirePermission("chores.manage")).Put("/api/chores/{id}", choresHandler.Update)
 		r.With(auth.RequirePermission("chores.manage")).Delete("/api/chores/{id}", choresHandler.Delete)
 		r.With(auth.RequirePermission("chores.complete")).Post("/api/chores/{id}/complete", choresHandler.Complete)
 		r.With(auth.RequirePermission("chores.complete")).Post("/api/chores/{id}/uncomplete", choresHandler.Uncomplete)
+
+		// Chore templates
+		r.With(auth.RequirePermission("chores.manage")).Post("/api/chore-templates", choreTemplatesHandler.Create)
+		r.With(auth.RequirePermission("chores.manage")).Put("/api/chore-templates/{id}", choreTemplatesHandler.Update)
+		r.With(auth.RequirePermission("chores.manage")).Delete("/api/chore-templates/{id}", choreTemplatesHandler.Delete)
+
+		// Tasks (adult task management)
+		r.Get("/api/tasks", tasksHandler.ListMyTasks)
+		r.Post("/api/tasks", tasksHandler.Create)
+		r.Post("/api/tasks/{taskId}/complete", tasksHandler.Complete)
+		r.Post("/api/tasks/{taskId}/uncomplete", tasksHandler.Uncomplete)
 
 		// Settings
 		r.With(auth.RequirePermission("settings.edit")).Put("/api/settings", settingsHandler.Update)

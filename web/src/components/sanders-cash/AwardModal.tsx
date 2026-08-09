@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { api, type AccountWithMember } from '../../api/client';
+import { useCurrencyName } from '../../hooks/useCurrencyName';
 
 export interface RewardPreset {
   reason: string;
@@ -22,6 +23,7 @@ interface AwardModalProps {
 }
 
 export function AwardModal({ accounts, onAwarded, onClose, defaultDirection = 'earn' }: AwardModalProps) {
+  const currencyName = useCurrencyName();
   const [selectedKid, setSelectedKid] = useState<string | null>(accounts.length === 1 ? accounts[0].memberId : null);
   const [direction, setDirection] = useState<'earn' | 'subtract'>(defaultDirection);
   const [selectedPreset, setSelectedPreset] = useState<RewardPreset | null>(null);
@@ -92,7 +94,7 @@ export function AwardModal({ accounts, onAwarded, onClose, defaultDirection = 'e
     <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-4">
       <div className="bg-surface rounded-2xl w-full max-w-md p-5 space-y-5 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-text-bright">Sanders Cash</h2>
+          <h2 className="text-xl font-bold text-text-bright">{currencyName}</h2>
           <button
             onClick={onClose}
             className="text-text-dim text-2xl leading-none p-2 -mr-2 -mt-2 min-w-[44px] min-h-[44px] flex items-center justify-center"

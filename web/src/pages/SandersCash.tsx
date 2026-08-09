@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, type AccountWithMember, type FamilyMember } from '../api/client';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { AwardModal } from '../components/sanders-cash/AwardModal';
+import { useCurrencyName } from '../hooks/useCurrencyName';
 
 function getAge(birthday: string): number | null {
   if (!birthday) return null;
@@ -19,6 +20,7 @@ export function SandersCash() {
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [showAward, setShowAward] = useState(false);
   const navigate = useNavigate();
+  const currencyName = useCurrencyName();
 
   const loadAccounts = useCallback(() => {
     api.get<AccountWithMember[]>('/api/sanders-cash/accounts').then(setAccounts).catch(() => {});
@@ -38,7 +40,7 @@ export function SandersCash() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <h1 className="text-2xl font-bold text-text-bright">Sanders Cash</h1>
+        <h1 className="text-2xl font-bold text-text-bright">{currencyName}</h1>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowAward(true)}

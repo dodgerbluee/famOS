@@ -9,11 +9,13 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/sandershome/server/internal/db"
 	"github.com/sandershome/server/internal/frigate"
+	"github.com/sandershome/server/internal/service"
 )
 
 type SettingsHandler struct {
-	db      *db.DB
-	frigate *frigate.Client
+	db       *db.DB
+	frigate  *frigate.Client
+	currency *service.CurrencyService
 }
 
 func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +41,15 @@ func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 		settings[key] = s
 	}
+
+	var familyName string
+	h.db.QueryRow(`SELECT name FROM families LIMIT 1`).Scan(&familyName)
+	settings["family_name"] = familyName
+
+	if h.currency != nil {
+		settings["currency_name_resolved"] = h.currency.GetCurrencyName()
+	}
+
 	writeJSON(w, http.StatusOK, settings)
 }
 
@@ -58,6 +69,14 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	for key, value := range updates {
 		if (key == "frigate_password" || key == "mqtt_password" || key == "immich_api_key") && value == "********" {
+			continue
+		}
+		if key == "family_name" {
+			_, err := tx.Exec(`UPDATE families SET name = ? WHERE id = (SELECT id FROM families LIMIT 1)`, value)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
 			continue
 		}
 		encoded, _ := json.Marshal(value)

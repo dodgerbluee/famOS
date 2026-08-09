@@ -1,45 +1,45 @@
 import { useEffect, useState, useCallback } from 'react';
-import { api, type Chore, type FamilyMember } from '../api/client';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { api, type ChoreTemplate, type FamilyMember } from '../api/client';
+import { useCurrencyName } from '../hooks/useCurrencyName';
 
 export function Chores() {
-  const [chores, setChores] = useState<Chore[]>([]);
+  const [templates, setTemplates] = useState<ChoreTemplate[]>([]);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const currencyName = useCurrencyName();
 
   const kids = members.filter((m) => m.role === 'kid');
 
   const load = useCallback(() => {
-    api.get<Chore[]>('/api/chores').then(setChores).catch(() => {});
+    api.get<ChoreTemplate[]>('/api/chore-templates').then(setTemplates).catch(() => {});
     api.get<FamilyMember[]>('/api/family').then(setMembers).catch(() => {});
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  useWebSocket((msg) => {
-    if (msg.type === 'chores_updated') setChores(msg.payload as Chore[]);
-  });
-
-  const handleComplete = (choreId: string, memberId: string) => {
-    api.post(`/api/chores/${choreId}/complete`, { completedBy: memberId }).then(() => load()).catch(() => {});
+  const handleComplete = (vikunjaTaskId: number) => {
+    api.post(`/api/tasks/${vikunjaTaskId}/complete`, {}).then(() => load()).catch(() => {});
   };
 
-  const handleUncomplete = (choreId: string, memberId: string) => {
-    api.post(`/api/chores/${choreId}/uncomplete`, { memberId }).then(() => load()).catch(() => {});
+  const handleUncomplete = (vikunjaTaskId: number) => {
+    api.post(`/api/tasks/${vikunjaTaskId}/uncomplete`, {}).then(() => load()).catch(() => {});
   };
 
   const handleDelete = (id: string) => {
-    api.delete(`/api/chores/${id}`).then(() => load()).catch(() => {});
+    api.delete(`/api/chore-templates/${id}`).then(() => load()).catch(() => {});
   };
 
-  const isCompletedBy = (chore: Chore, memberId: string) =>
-    chore.completions.some((c) => c.completedBy === memberId);
+  const isCompletedBy = (tmpl: ChoreTemplate, memberId: string) =>
+    tmpl.tasks?.some((t) => t.memberId === memberId && t.done) ?? false;
 
-  const sharedChores = chores.filter((c) => !c.assignedTo);
-  const choresByKid = kids.map((kid) => ({
+  const getTaskId = (tmpl: ChoreTemplate, memberId: string) =>
+    tmpl.tasks?.find((t) => t.memberId === memberId)?.vikunjaTaskId;
+
+  const sharedTemplates = templates.filter((t) => t.isShared);
+  const templatesByKid = kids.map((kid) => ({
     kid,
-    chores: chores.filter((c) => c.assignedTo === kid.id),
+    templates: templates.filter((t) => !t.isShared && t.assignedMembers.includes(kid.id)),
   }));
 
   return (
@@ -48,7 +48,7 @@ export function Chores() {
         <h1 className="text-2xl font-bold text-text-bright">Chores</h1>
         <button
           onClick={() => { setEditingId(null); setShowForm(!showForm); }}
-          className="bg-primary-light text-surface px-4 py-2 rounded-xl text-sm font-medium active:scale-95 transition-transform"
+          className="bg-primary-light text-surface px-4 py-2 rounded-xl text-sm font-medium active:scale-95 transition-transform min-h-[44px]"
         >
           {showForm ? 'Cancel' : '+ Add Chore'}
         </button>
@@ -57,57 +57,60 @@ export function Chores() {
       {showForm && (
         <ChoreForm
           kids={kids}
-          editingChore={editingId ? chores.find((c) => c.id === editingId) : undefined}
+          editingTemplate={editingId ? templates.find((t) => t.id === editingId) : undefined}
+          currencyName={currencyName}
           onSave={() => { setShowForm(false); setEditingId(null); load(); }}
           onCancel={() => { setShowForm(false); setEditingId(null); }}
         />
       )}
 
-      {/* Shared chores */}
-      {sharedChores.length > 0 && (
+      {sharedTemplates.length > 0 && (
         <section>
           <h2 className="text-sm font-semibold text-text-dim uppercase tracking-wide mb-3">Everyone</h2>
           <div className="space-y-2">
-            {sharedChores.map((chore) => (
+            {sharedTemplates.map((tmpl) => (
               <ChoreRow
-                key={chore.id}
-                chore={chore}
-                kids={kids}
+                key={tmpl.id}
+                template={tmpl}
+                kids={kids.filter((k) => tmpl.assignedMembers.includes(k.id))}
+                currencyName={currencyName}
                 isCompletedBy={isCompletedBy}
+                getTaskId={getTaskId}
                 onComplete={handleComplete}
                 onUncomplete={handleUncomplete}
-                onEdit={() => { setEditingId(chore.id); setShowForm(true); }}
-                onDelete={() => handleDelete(chore.id)}
+                onEdit={() => { setEditingId(tmpl.id); setShowForm(true); }}
+                onDelete={() => handleDelete(tmpl.id)}
               />
             ))}
           </div>
         </section>
       )}
 
-      {/* Per-kid chores */}
-      {choresByKid.map(({ kid, chores: kidChores }) => kidChores.length > 0 && (
+      {templatesByKid.map(({ kid, templates: kidTemplates }) => kidTemplates.length > 0 && (
         <section key={kid.id}>
           <h2 className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: kid.color }}>
             {kid.name}
           </h2>
           <div className="space-y-2">
-            {kidChores.map((chore) => (
+            {kidTemplates.map((tmpl) => (
               <ChoreRow
-                key={chore.id}
-                chore={chore}
+                key={tmpl.id}
+                template={tmpl}
                 kids={[kid]}
+                currencyName={currencyName}
                 isCompletedBy={isCompletedBy}
+                getTaskId={getTaskId}
                 onComplete={handleComplete}
                 onUncomplete={handleUncomplete}
-                onEdit={() => { setEditingId(chore.id); setShowForm(true); }}
-                onDelete={() => handleDelete(chore.id)}
+                onEdit={() => { setEditingId(tmpl.id); setShowForm(true); }}
+                onDelete={() => handleDelete(tmpl.id)}
               />
             ))}
           </div>
         </section>
       ))}
 
-      {chores.length === 0 && !showForm && (
+      {templates.length === 0 && !showForm && (
         <p className="text-text-dim text-center py-8">No chores yet. Tap "+ Add Chore" to get started.</p>
       )}
     </div>
@@ -115,46 +118,55 @@ export function Chores() {
 }
 
 function ChoreRow({
-  chore, kids, isCompletedBy, onComplete, onUncomplete, onEdit, onDelete,
+  template, kids, currencyName, isCompletedBy, getTaskId, onComplete, onUncomplete, onEdit, onDelete,
 }: {
-  chore: Chore;
+  template: ChoreTemplate;
   kids: FamilyMember[];
-  isCompletedBy: (chore: Chore, memberId: string) => boolean;
-  onComplete: (choreId: string, memberId: string) => void;
-  onUncomplete: (choreId: string, memberId: string) => void;
+  currencyName: string;
+  isCompletedBy: (tmpl: ChoreTemplate, memberId: string) => boolean;
+  getTaskId: (tmpl: ChoreTemplate, memberId: string) => number | undefined;
+  onComplete: (vikunjaTaskId: number) => void;
+  onUncomplete: (vikunjaTaskId: number) => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const allDone = kids.length > 0 && kids.every((k) => isCompletedBy(chore, k.id));
+  const allDone = kids.length > 0 && kids.every((k) => isCompletedBy(template, k.id));
 
   return (
     <div className={`bg-surface rounded-xl p-4 transition-colors ${allDone ? 'opacity-60' : ''}`}>
       <div className="flex items-center gap-3">
-        <span className="text-lg">{chore.icon || '📋'}</span>
+        <span className="text-lg">{template.icon || '📋'}</span>
         <div className="flex-1 min-w-0">
-          <p className={`text-text-bright font-medium ${allDone ? 'line-through text-text-dim' : ''}`}>{chore.title}</p>
+          <p className={`text-text-bright font-medium ${allDone ? 'line-through text-text-dim' : ''}`}>{template.title}</p>
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-text-dim text-[11px] capitalize">{chore.recurrence}</span>
-            {chore.rewardAmount > 0 && (
-              <span className="text-accent-green text-[11px]">+{chore.rewardAmount} SC</span>
+            <span className="text-text-dim text-[11px] capitalize">{template.recurrence}</span>
+            {template.rewardAmount > 0 && (
+              <span className="text-accent-green text-[11px]">+{(template.rewardAmount / 100).toFixed(2)} {currencyName}</span>
+            )}
+            {template.isShared && (
+              <span className="text-primary-light text-[11px]">Shared</span>
             )}
           </div>
         </div>
 
-        {/* Completion toggles per kid */}
         <div className="flex flex-wrap items-center gap-1.5">
           {kids.map((kid) => {
-            const done = isCompletedBy(chore, kid.id);
+            const done = isCompletedBy(template, kid.id);
+            const taskId = getTaskId(template, kid.id);
             return (
               <button
                 key={kid.id}
-                onClick={() => done ? onUncomplete(chore.id, kid.id) : onComplete(chore.id, kid.id)}
+                onClick={() => {
+                  if (!taskId) return;
+                  done ? onUncomplete(taskId) : onComplete(taskId);
+                }}
+                disabled={!taskId}
                 className="flex items-center justify-center w-8 h-8 rounded-full transition-all active:scale-90"
                 style={{
                   backgroundColor: done ? kid.color : 'transparent',
                   border: `2px solid ${kid.color}`,
-                  opacity: done ? 1 : 0.4,
+                  opacity: done ? 1 : taskId ? 0.4 : 0.2,
                 }}
                 title={`${kid.name}: ${done ? 'Done' : 'Not done'}`}
               >
@@ -166,7 +178,7 @@ function ChoreRow({
 
         <button
           onClick={() => setExpanded(!expanded)}
-          className="text-text-dim hover:text-text-bright text-sm px-1"
+          className="text-text-dim hover:text-text-bright text-sm px-1 min-h-[44px] flex items-center"
         >
           ⋯
         </button>
@@ -174,13 +186,8 @@ function ChoreRow({
 
       {expanded && (
         <div className="flex items-center gap-3 mt-3 pt-3 border-t border-surface-lighter">
-          <button onClick={onEdit} className="text-primary-light text-xs font-medium">Edit</button>
-          <button onClick={onDelete} className="text-accent-red text-xs font-medium">Delete</button>
-          {chore.completions.length > 0 && (
-            <span className="text-text-dim text-xs ml-auto">
-              Done by: {chore.completions.map((c) => c.completedName).join(', ')}
-            </span>
-          )}
+          <button onClick={onEdit} className="text-primary-light text-xs font-medium min-h-[44px] flex items-center">Edit</button>
+          <button onClick={onDelete} className="text-accent-red text-xs font-medium min-h-[44px] flex items-center">Delete</button>
         </div>
       )}
     </div>
@@ -190,35 +197,46 @@ function ChoreRow({
 const CHORE_ICONS = ['📋', '🧹', '🛏️', '🧽', '🗑️', '🐕', '🍽️', '📚', '🧺', '🪴', '🚿', '🪥'];
 
 function ChoreForm({
-  kids, editingChore, onSave, onCancel,
+  kids, editingTemplate, currencyName, onSave, onCancel,
 }: {
   kids: FamilyMember[];
-  editingChore?: Chore;
+  editingTemplate?: ChoreTemplate;
+  currencyName: string;
   onSave: () => void;
   onCancel: () => void;
 }) {
-  const [title, setTitle] = useState(editingChore?.title || '');
-  const [icon, setIcon] = useState(editingChore?.icon || '📋');
-  const [assignedTo, setAssignedTo] = useState<string>(editingChore?.assignedTo || '');
-  const [recurrence, setRecurrence] = useState(editingChore?.recurrence || 'daily');
-  const [rewardAmount, setRewardAmount] = useState(editingChore?.rewardAmount || 0);
+  const [title, setTitle] = useState(editingTemplate?.title || '');
+  const [icon, setIcon] = useState(editingTemplate?.icon || '📋');
+  const [assignedMembers, setAssignedMembers] = useState<string[]>(
+    editingTemplate?.assignedMembers || kids.map((k) => k.id)
+  );
+  const [recurrence, setRecurrence] = useState(editingTemplate?.recurrence || 'daily');
+  const [rewardAmount, setRewardAmount] = useState(editingTemplate?.rewardAmount || 0);
   const [saving, setSaving] = useState(false);
 
+  const toggleMember = (id: string) => {
+    setAssignedMembers((prev) =>
+      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
+    );
+  };
+
+  const allSelected = kids.length > 0 && kids.every((k) => assignedMembers.includes(k.id));
+
   const handleSubmit = async () => {
-    if (!title.trim()) return;
+    if (!title.trim() || assignedMembers.length === 0) return;
     setSaving(true);
     const body = {
       title: title.trim(),
       icon,
-      assignedTo: assignedTo || null,
+      assignedMembers,
       recurrence,
       rewardAmount,
     };
     try {
-      if (editingChore) {
-        await api.put(`/api/chores/${editingChore.id}`, body);
+      if (editingTemplate) {
+        await api.put(`/api/chore-templates/${editingTemplate.id}`, body);
       } else {
-        await api.post('/api/chores', body);
+        await api.post('/api/chore-templates', body);
       }
       onSave();
     } catch {
@@ -228,7 +246,7 @@ function ChoreForm({
 
   return (
     <div className="bg-surface rounded-xl p-5 space-y-4">
-      <h3 className="text-text-bright font-semibold">{editingChore ? 'Edit Chore' : 'New Chore'}</h3>
+      <h3 className="text-text-bright font-semibold">{editingTemplate ? 'Edit Chore' : 'New Chore'}</h3>
 
       <div>
         <label className="text-text-dim text-xs uppercase tracking-wide block mb-1">Title</label>
@@ -261,9 +279,9 @@ function ChoreForm({
         <label className="text-text-dim text-xs uppercase tracking-wide block mb-1">Assign To</label>
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => setAssignedTo('')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              !assignedTo ? 'bg-primary-light/20 text-primary-light ring-1 ring-primary-light' : 'bg-surface-light text-text-dim'
+            onClick={() => setAssignedMembers(allSelected ? [] : kids.map((k) => k.id))}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${
+              allSelected ? 'bg-primary-light/20 text-primary-light ring-1 ring-primary-light' : 'bg-surface-light text-text-dim'
             }`}
           >
             Everyone
@@ -271,12 +289,12 @@ function ChoreForm({
           {kids.map((kid) => (
             <button
               key={kid.id}
-              onClick={() => setAssignedTo(kid.id)}
-              className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+              onClick={() => toggleMember(kid.id)}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors min-h-[44px]"
               style={{
-                backgroundColor: assignedTo === kid.id ? kid.color + '33' : undefined,
-                color: assignedTo === kid.id ? kid.color : undefined,
-                border: assignedTo === kid.id ? `1px solid ${kid.color}` : undefined,
+                backgroundColor: assignedMembers.includes(kid.id) ? kid.color + '33' : undefined,
+                color: assignedMembers.includes(kid.id) ? kid.color : undefined,
+                border: assignedMembers.includes(kid.id) ? `1px solid ${kid.color}` : undefined,
               }}
             >
               {kid.name}
@@ -291,7 +309,7 @@ function ChoreForm({
           <select
             value={recurrence}
             onChange={(e) => setRecurrence(e.target.value)}
-            className="w-full bg-surface-light text-text-bright rounded-lg px-3 py-2 text-sm outline-none"
+            className="w-full bg-surface-light text-text-bright rounded-lg px-3 py-2 text-sm outline-none min-h-[44px]"
           >
             <option value="daily">Daily</option>
             <option value="weekly">Weekly</option>
@@ -299,26 +317,29 @@ function ChoreForm({
           </select>
         </div>
         <div>
-          <label className="text-text-dim text-xs uppercase tracking-wide block mb-1">Reward (SC)</label>
-          <input
-            type="number"
-            min={0}
-            value={rewardAmount}
-            onChange={(e) => setRewardAmount(Math.max(0, parseInt(e.target.value) || 0))}
-            className="w-full bg-surface-light text-text-bright rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary-light"
-          />
+          <label className="text-text-dim text-xs uppercase tracking-wide block mb-1">Reward ({currencyName})</label>
+          <div>
+            <input
+              type="number"
+              step="0.01"
+              min={0}
+              value={(rewardAmount / 100).toFixed(2)}
+              onChange={(e) => setRewardAmount(Math.max(0, Math.round((parseFloat(e.target.value) || 0) * 100)))}
+              className="w-full bg-surface-light text-text-bright rounded-lg px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary-light min-h-[44px]"
+            />
+          </div>
         </div>
       </div>
 
       <div className="flex items-center gap-3 pt-2">
         <button
           onClick={handleSubmit}
-          disabled={!title.trim() || saving}
-          className="bg-primary-light text-surface px-5 py-2 rounded-xl text-sm font-medium disabled:opacity-50 active:scale-95 transition-transform"
+          disabled={!title.trim() || assignedMembers.length === 0 || saving}
+          className="bg-primary-light text-surface px-5 py-2 rounded-xl text-sm font-medium disabled:opacity-50 active:scale-95 transition-transform min-h-[44px]"
         >
-          {saving ? 'Saving...' : editingChore ? 'Update' : 'Create'}
+          {saving ? 'Saving...' : editingTemplate ? 'Update' : 'Create'}
         </button>
-        <button onClick={onCancel} className="text-text-dim text-sm font-medium">Cancel</button>
+        <button onClick={onCancel} className="text-text-dim text-sm font-medium min-h-[44px]">Cancel</button>
       </div>
     </div>
   );

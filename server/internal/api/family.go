@@ -1,27 +1,33 @@
 package api
 
 import (
+	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/sandershome/server/internal/auth"
 	"github.com/sandershome/server/internal/db"
+	"github.com/sandershome/server/internal/service"
 )
 
 type FamilyHandler struct {
-	db *db.DB
+	db             *db.DB
+	vikunja        *service.VikunjaService
+	choreTemplates *service.ChoreTemplateService
 }
 
 type FamilyMember struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Role      string `json:"role"`
-	AvatarURL string `json:"avatarUrl"`
-	Color     string `json:"color"`
-	SortOrder int    `json:"sortOrder"`
-	Birthday  string `json:"birthday"`
-	CreatedAt string `json:"createdAt"`
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Role             string `json:"role"`
+	AvatarURL        string `json:"avatarUrl"`
+	Color            string `json:"color"`
+	SortOrder        int    `json:"sortOrder"`
+	Birthday         string `json:"birthday"`
+	VikunjaProjectID int64  `json:"vikunjaProjectId"`
+	CreatedAt        string `json:"createdAt"`
 }
 
 type CreateFamilyMemberRequest struct {
@@ -32,7 +38,7 @@ type CreateFamilyMemberRequest struct {
 }
 
 func (h *FamilyHandler) List(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.db.Query(`SELECT id, name, role, avatar_url, color, sort_order, COALESCE(birthday, ''), created_at FROM family_members ORDER BY sort_order, name`)
+	rows, err := h.db.Query(`SELECT id, name, role, avatar_url, color, sort_order, COALESCE(birthday, ''), COALESCE(vikunja_project_id, 0), created_at FROM family_members ORDER BY sort_order, name`)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list family members")
 		return
@@ -42,7 +48,7 @@ func (h *FamilyHandler) List(w http.ResponseWriter, r *http.Request) {
 	members := []FamilyMember{}
 	for rows.Next() {
 		var m FamilyMember
-		if err := rows.Scan(&m.ID, &m.Name, &m.Role, &m.AvatarURL, &m.Color, &m.SortOrder, &m.Birthday, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.Role, &m.AvatarURL, &m.Color, &m.SortOrder, &m.Birthday, &m.VikunjaProjectID, &m.CreatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to scan family member")
 			return
 		}
@@ -55,13 +61,34 @@ func (h *FamilyHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *FamilyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var m FamilyMember
-	err := h.db.QueryRow(`SELECT id, name, role, avatar_url, color, sort_order, COALESCE(birthday, ''), created_at FROM family_members WHERE id = ?`, id).
-		Scan(&m.ID, &m.Name, &m.Role, &m.AvatarURL, &m.Color, &m.SortOrder, &m.Birthday, &m.CreatedAt)
+	err := h.db.QueryRow(`SELECT id, name, role, avatar_url, color, sort_order, COALESCE(birthday, ''), COALESCE(vikunja_project_id, 0), created_at FROM family_members WHERE id = ?`, id).
+		Scan(&m.ID, &m.Name, &m.Role, &m.AvatarURL, &m.Color, &m.SortOrder, &m.Birthday, &m.VikunjaProjectID, &m.CreatedAt)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "family member not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, m)
+}
+
+func (h *FamilyHandler) getOrCreateFamilyProject(r *http.Request) int64 {
+	var raw string
+	err := h.db.QueryRow(`SELECT value FROM app_settings WHERE key = 'vikunja_family_project_id'`).Scan(&raw)
+	if err == nil && raw != "" {
+		var id int64
+		if json.Unmarshal([]byte(raw), &id) == nil && id > 0 {
+			return id
+		}
+	}
+
+	projectID, err := h.vikunja.CreateProject(r.Context(), "Family", 0)
+	if err != nil {
+		log.Printf("failed to create Vikunja family project: %v", err)
+		return 0
+	}
+
+	encoded, _ := json.Marshal(projectID)
+	h.db.Exec(`INSERT INTO app_settings (key, value) VALUES ('vikunja_family_project_id', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(encoded))
+	return projectID
 }
 
 func (h *FamilyHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +119,6 @@ func (h *FamilyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Get family_id from the creating user's context, or default
 	familyID := ""
 	if user := auth.UserFromContext(r.Context()); user != nil {
 		familyID = user.FamilyID
@@ -126,6 +152,18 @@ func (h *FamilyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to commit")
 		return
+	}
+
+	if h.vikunja != nil {
+		parentProjectID := h.getOrCreateFamilyProject(r)
+		if parentProjectID > 0 {
+			projectID, err := h.vikunja.CreateProject(r.Context(), req.Name, parentProjectID)
+			if err != nil {
+				log.Printf("failed to create Vikunja project for member %s: %v", req.Name, err)
+			} else {
+				h.db.Exec(`UPDATE family_members SET vikunja_project_id = ? WHERE id = ?`, projectID, id)
+			}
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
@@ -167,6 +205,11 @@ func (h *FamilyHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 func (h *FamilyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+
+	// Look up Vikunja project ID before deleting
+	var vikunjaProjectID int64
+	h.db.QueryRow(`SELECT COALESCE(vikunja_project_id, 0) FROM family_members WHERE id = ?`, id).Scan(&vikunjaProjectID)
+
 	result, err := h.db.Exec(`DELETE FROM family_members WHERE id = ?`, id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete")
@@ -177,5 +220,19 @@ func (h *FamilyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "family member not found")
 		return
 	}
+
+	// Clean up Vikunja project
+	if h.vikunja != nil && vikunjaProjectID > 0 {
+		if err := h.vikunja.DeleteProject(r.Context(), vikunjaProjectID); err != nil {
+			log.Printf("failed to delete Vikunja project %d for member %s: %v", vikunjaProjectID, id, err)
+		}
+	}
+
+	if h.choreTemplates != nil {
+		if err := h.choreTemplates.RemoveMemberFromTemplates(id); err != nil {
+			log.Printf("failed to clean up chore templates for member %s: %v", id, err)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
