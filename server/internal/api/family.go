@@ -169,6 +169,52 @@ func (h *FamilyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
 }
 
+func (h *FamilyHandler) BackfillVikunjaProjects(w http.ResponseWriter, r *http.Request) {
+	if h.vikunja == nil {
+		writeError(w, http.StatusBadRequest, "Vikunja not configured")
+		return
+	}
+
+	parentProjectID := h.getOrCreateFamilyProject(r)
+	if parentProjectID == 0 {
+		writeError(w, http.StatusInternalServerError, "failed to get or create family project")
+		return
+	}
+
+	rows, err := h.db.Query(`SELECT id, name FROM family_members WHERE COALESCE(vikunja_project_id, 0) = 0`)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to query members")
+		return
+	}
+	defer rows.Close()
+
+	type result struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	var created []result
+	var errors []string
+
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			continue
+		}
+		projectID, err := h.vikunja.CreateProject(r.Context(), name, parentProjectID)
+		if err != nil {
+			errors = append(errors, name+": "+err.Error())
+			continue
+		}
+		h.db.Exec(`UPDATE family_members SET vikunja_project_id = ? WHERE id = ?`, projectID, id)
+		created = append(created, result{ID: id, Name: name})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"created": created,
+		"errors":  errors,
+	})
+}
+
 func (h *FamilyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 

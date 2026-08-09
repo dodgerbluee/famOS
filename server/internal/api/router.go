@@ -180,6 +180,7 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 		r.With(auth.RequirePermission("family.manage")).Post("/api/family", familyHandler.Create)
 		r.With(auth.RequirePermission("family.manage")).Put("/api/family/{id}", familyHandler.Update)
 		r.With(auth.RequirePermission("family.manage")).Delete("/api/family/{id}", familyHandler.Delete)
+		r.With(auth.RequirePermission("family.manage")).Post("/api/family/backfill-vikunja", familyHandler.BackfillVikunjaProjects)
 
 		// Sanders Cash writes
 		r.With(auth.RequirePermission("sanders_cash.award")).Post("/api/sanders-cash/transactions", cashHandler.CreateTransaction)
