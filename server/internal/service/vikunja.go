@@ -300,6 +300,22 @@ func (s *VikunjaService) CreateProject(ctx context.Context, title string, parent
 	return result.ID, nil
 }
 
+func (s *VikunjaService) UpdateProject(ctx context.Context, projectID int64, title string) error {
+	resp, err := s.doRequest(ctx, http.MethodPost, fmt.Sprintf("/api/v1/projects/%d", projectID), map[string]any{
+		"title": title,
+	})
+	if err != nil {
+		return fmt.Errorf("vikunja update project failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("vikunja update project returned %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
 func (s *VikunjaService) DeleteProject(ctx context.Context, projectID int64) error {
 	resp, err := s.doRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/projects/%d", projectID), nil)
 	if err != nil {
