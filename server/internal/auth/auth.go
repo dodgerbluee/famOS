@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -245,7 +246,9 @@ func NeedsSetup(database *db.DB) bool {
 	var count int
 	err := database.QueryRow(`SELECT COUNT(*) FROM family_members WHERE role IN ('admin', 'parent', 'kid')`).Scan(&count)
 	if err != nil {
-		return true
+		log.Printf("NeedsSetup: %v", err)
+		// A locked or transient error must not look like first-run setup.
+		return false
 	}
 	return count == 0
 }

@@ -379,7 +379,7 @@ func (h *KioskHandler) Claim(w http.ResponseWriter, r *http.Request) {
 	h.db.Exec(`UPDATE sessions SET user_agent = ? WHERE token_hash = ?`, r.UserAgent(), auth.TokenHash(sessionToken))
 	h.db.Exec(`UPDATE kiosk_pairing_tokens SET status = 'claimed', claim_token = '' WHERE id = ?`, pairingID)
 
-	setSessionCookie(w, sessionToken, 10*365*24*time.Hour)
+	setSessionCookie(w, r, sessionToken, 10*365*24*time.Hour)
 
 	var name, role, familyID, color string
 	h.db.QueryRow(`SELECT name, role, family_id, color FROM family_members WHERE id = ?`, memberID).

@@ -236,7 +236,7 @@ func (h *InviteHandler) Accept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setSessionCookie(w, token, 30*24*time.Hour)
+	setSessionCookie(w, r, token, 30*24*time.Hour)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"memberId": memberID,

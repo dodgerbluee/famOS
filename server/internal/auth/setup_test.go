@@ -34,6 +34,18 @@ func TestNeedsSetup_FalseWhenHouseholdMembersExistWithoutFamiliesRow(t *testing.
 	}
 }
 
+func TestNeedsSetup_FalseWhenQueryFails(t *testing.T) {
+	database, err := db.New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	database.Close()
+
+	if NeedsSetup(database) {
+		t.Fatal("a database error must not look like first-run setup")
+	}
+}
+
 func TestNeedsSetup_TrueWhenNoPeople(t *testing.T) {
 	database, err := db.New(":memory:")
 	if err != nil {

@@ -82,7 +82,7 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setSessionCookie(w, token, 30*24*time.Hour)
+	setSessionCookie(w, r, token, 30*24*time.Hour)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"memberId": memberID,
@@ -130,7 +130,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setSessionCookie(w, token, 30*24*time.Hour)
+	setSessionCookie(w, r, token, 30*24*time.Hour)
 
 	var name, role, familyID, color, username string
 	h.db.QueryRow(`SELECT name, role, family_id, color, COALESCE(username, '') FROM family_members WHERE id = ?`, memberID).
@@ -214,12 +214,14 @@ func (h *AuthHandler) PinVerify(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func setSessionCookie(w http.ResponseWriter, token string, maxAge time.Duration) {
+func setSessionCookie(w http.ResponseWriter, r *http.Request, token string, maxAge time.Duration) {
+	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(maxAge / time.Second),
 	})

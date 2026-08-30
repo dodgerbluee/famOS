@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	_ "modernc.org/sqlite"
 )
@@ -16,21 +17,37 @@ type DB struct {
 }
 
 func New(path string) (*DB, error) {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("create data dir: %w", err)
+	if path != ":memory:" {
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return nil, fmt.Errorf("create data dir: %w", err)
+		}
 	}
 
-	sqlDB, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=ON")
+	sqlDB, err := sql.Open("sqlite", sqliteDSN(path))
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
 	if err := sqlDB.Ping(); err != nil {
+		sqlDB.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
 	return &DB{sqlDB}, nil
+}
+
+// sqliteDSN applies pragmas on every connection. modernc.org/sqlite ignores
+// the mattn-style _busy_timeout query keys, so concurrent requests were
+// hitting SQLITE_BUSY immediately (dashboard 500s, refresh treated as setup).
+var memSeq atomic.Uint64
+
+func sqliteDSN(path string) string {
+	pragmas := "_pragma=busy_timeout(10000)&_pragma=foreign_keys(1)"
+	if path == ":memory:" {
+		name := fmt.Sprintf("mem-%d-%d", os.Getpid(), memSeq.Add(1))
+		return "file:" + name + "?mode=memory&cache=shared&" + pragmas
+	}
+	return "file:" + path + "?" + pragmas + "&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
 }
 
 func (d *DB) Migrate() error {

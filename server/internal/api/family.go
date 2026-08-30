@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -45,11 +46,12 @@ type CreateFamilyMemberRequest struct {
 
 func (h *FamilyHandler) List(w http.ResponseWriter, r *http.Request) {
 	if h.vikunja != nil {
-		backfillVikunjaProjects(r.Context(), h.db, h.vikunja)
+		go backfillVikunjaProjects(context.WithoutCancel(r.Context()), h.db, h.vikunja)
 	}
 
 	rows, err := h.db.Query(`SELECT id, name, role, avatar_url, color, sort_order, COALESCE(birthday, ''), COALESCE(vikunja_project_id, 0), CASE WHEN COALESCE(password_hash, '') != '' THEN 1 ELSE 0 END, COALESCE(username, ''), created_at FROM family_members WHERE role != 'kiosk' ORDER BY sort_order, name`)
 	if err != nil {
+		log.Printf("list family members: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to list family members")
 		return
 	}
@@ -132,16 +134,21 @@ func ensureVikunjaProject(ctx context.Context, database *db.DB, vikunja *service
 	database.Exec(`UPDATE family_members SET vikunja_project_id = ? WHERE id = ?`, newID, memberID)
 }
 
+var vikunjaBackfillRunning atomic.Bool
+
 func backfillVikunjaProjects(ctx context.Context, database *db.DB, vikunja *service.VikunjaService) {
 	if vikunja == nil || !vikunjaConfigured(database) {
 		return
 	}
+	if !vikunjaBackfillRunning.CompareAndSwap(false, true) {
+		return
+	}
+	defer vikunjaBackfillRunning.Store(false)
 
 	rows, err := database.Query(`SELECT id, name, role FROM family_members WHERE role != 'kiosk' AND COALESCE(vikunja_project_id, 0) = 0`)
 	if err != nil {
 		return
 	}
-	defer rows.Close()
 
 	type member struct {
 		id, name, role string
@@ -153,6 +160,8 @@ func backfillVikunjaProjects(ctx context.Context, database *db.DB, vikunja *serv
 			missing = append(missing, m)
 		}
 	}
+	rows.Close()
+
 	for _, m := range missing {
 		ensureVikunjaProject(ctx, database, vikunja, m.id, m.name, m.role)
 	}
