@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../api/client';
 import type { AuthUser } from '../contexts/AuthContext';
 
 export function Setup() {
-  const { setUser } = useAuth();
+  const { setUser, user, needsSetup, loading } = useAuth();
   const navigate = useNavigate();
   const [familyName, setFamilyName] = useState('');
   const [name, setName] = useState('');
@@ -16,6 +16,16 @@ export function Setup() {
   const [submitting, setSubmitting] = useState(false);
 
   const colors = ['#89b4fa', '#a6e3a1', '#f9e2af', '#f38ba8', '#cba6f7', '#94e2d5', '#fab387', '#f2cdcd'];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+  if (user) return <Navigate to="/" replace />;
+  if (!needsSetup) return <Navigate to="/login" replace />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

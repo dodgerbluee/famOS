@@ -59,13 +59,7 @@ func (d *DB) Migrate() error {
 	addColumnIfNotExists(d, "sessions", "last_seen_at", "DATETIME")
 	addColumnIfNotExists(d, "sessions", "user_agent", "TEXT DEFAULT ''")
 
-	// Create default family for existing members
-	var memberCount int
-	d.QueryRow(`SELECT COUNT(*) FROM family_members WHERE family_id = '' OR family_id IS NULL`).Scan(&memberCount)
-	if memberCount > 0 {
-		d.Exec(`INSERT OR IGNORE INTO families (id, name) VALUES ('default', 'Sanders Family')`)
-		d.Exec(`UPDATE family_members SET family_id = 'default' WHERE family_id = '' OR family_id IS NULL`)
-	}
+	ensureFamiliesForMembers(d)
 
 	// Promote first parent to admin if no admin exists
 	var adminCount int
@@ -79,6 +73,37 @@ func (d *DB) Migrate() error {
 	rebuildFamilyMembersIfNeeded(d)
 
 	return nil
+}
+
+// ensureFamiliesForMembers creates families rows for household members that
+// predate the families table, or whose family_id points at a missing row.
+// Without this, NeedsSetup used to treat an existing instance as first-run.
+func ensureFamiliesForMembers(d *DB) {
+	var emptyCount int
+	d.QueryRow(`SELECT COUNT(*) FROM family_members WHERE family_id = '' OR family_id IS NULL`).Scan(&emptyCount)
+	if emptyCount > 0 {
+		d.Exec(`INSERT OR IGNORE INTO families (id, name) VALUES ('default', 'Sanders Family')`)
+		d.Exec(`UPDATE family_members SET family_id = 'default' WHERE family_id = '' OR family_id IS NULL`)
+	}
+
+	rows, err := d.Query(`
+		SELECT DISTINCT family_id FROM family_members
+		WHERE family_id != '' AND family_id NOT IN (SELECT id FROM families)`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	var orphans []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil && id != "" {
+			orphans = append(orphans, id)
+		}
+	}
+	for _, id := range orphans {
+		d.Exec(`INSERT OR IGNORE INTO families (id, name) VALUES (?, 'Family')`, id)
+	}
 }
 
 func rebuildFamilyMembersIfNeeded(d *DB) {

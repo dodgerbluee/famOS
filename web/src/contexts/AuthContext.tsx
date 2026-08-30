@@ -30,35 +30,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
 
+  const assignUser = useCallback((next: AuthUser | null) => {
+    setUser(next);
+    if (next) setNeedsSetup(false);
+  }, []);
+
   useEffect(() => {
     api.get<AuthUser>('/api/auth/me')
-      .then((u) => setUser(u))
+      .then((u) => assignUser(u))
       .catch(() =>
         api.get<{ needsSetup: boolean }>('/api/setup/status')
           .then((s) => setNeedsSetup(s.needsSetup))
           .catch(() => {})
       )
       .finally(() => setLoading(false));
-  }, []);
+  }, [assignUser]);
 
   const login = useCallback(async (username: string, password: string) => {
     const result = await api.post<AuthUser>('/api/auth/login', { username, password });
     const me = await api.get<AuthUser>('/api/auth/me');
-    setUser(me ?? result);
-  }, []);
+    assignUser(me ?? result);
+  }, [assignUser]);
 
   const logout = useCallback(async () => {
     await api.post('/api/auth/logout', {});
     setUser(null);
+    try {
+      const s = await api.get<{ needsSetup: boolean }>('/api/setup/status');
+      setNeedsSetup(s.needsSetup);
+    } catch {
+      setNeedsSetup(false);
+    }
   }, []);
 
   const hasPermission = useCallback((perm: string) => {
     if (!user) return false;
-    return user.permissions[perm] ?? false;
+    return user.permissions?.[perm] ?? false;
   }, [user]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, needsSetup, login, logout, setUser, hasPermission }}>
+    <AuthContext.Provider value={{ user, loading, needsSetup, login, logout, setUser: assignUser, hasPermission }}>
       {children}
     </AuthContext.Provider>
   );

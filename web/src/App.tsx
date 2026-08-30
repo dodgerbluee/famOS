@@ -66,10 +66,9 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (user) return <>{children}</>;
   if (needsSetup) return <Navigate to="/setup" replace />;
-  if (!user) return <Navigate to="/login" replace />;
-
-  return <>{children}</>;
+  return <Navigate to="/login" replace />;
 }
 
 export default function App() {

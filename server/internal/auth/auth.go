@@ -243,9 +243,8 @@ func loadOverrides(database *db.DB, memberID string) map[string]bool {
 
 func NeedsSetup(database *db.DB) bool {
 	var count int
-	err := database.QueryRow(`SELECT COUNT(*) FROM families`).Scan(&count)
+	err := database.QueryRow(`SELECT COUNT(*) FROM family_members WHERE role IN ('admin', 'parent', 'kid')`).Scan(&count)
 	if err != nil {
-		// Table might not exist yet on very first run
 		return true
 	}
 	return count == 0

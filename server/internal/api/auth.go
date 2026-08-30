@@ -137,12 +137,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Scan(&name, &role, &familyID, &color, &username)
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"memberId": memberID,
-		"name":     name,
-		"role":     role,
-		"familyId": familyID,
-		"color":    color,
-		"username": username,
+		"memberId":    memberID,
+		"name":        name,
+		"role":        role,
+		"familyId":    familyID,
+		"color":       color,
+		"username":    username,
+		"permissions": auth.ResolvePermissions(role, nil),
 	})
 }
 
