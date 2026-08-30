@@ -208,15 +208,19 @@ function MemberEditPopup({ member, onClose, onSaved }: EditPopupProps) {
   const [color, setColor] = useState(member.color);
   const [birthday, setBirthday] = useState(member.birthday || '');
   const [avatarPreview, setAvatarPreview] = useState(member.avatarUrl || '');
+  const [username, setUsername] = useState(member.username || '');
+  const [password, setPassword] = useState('');
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const isAdult = member.role === 'admin' || member.role === 'parent';
 
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [cropImg, setCropImg] = useState<HTMLImageElement | null>(null);
 
   const handleFileSelect = (file: File) => {
-    if (!file.type.startsWith('image/')) return;
+    if (file.type && !file.type.startsWith('image/')) return;
     if (file.size > 10 * 1024 * 1024) return;
 
     const reader = new FileReader();
@@ -252,16 +256,28 @@ function MemberEditPopup({ member, onClose, onSaved }: EditPopupProps) {
 
   const handleSave = async () => {
     setSaving(true);
+    setError('');
     try {
-      await api.put(`/api/family/${member.id}`, {
+      const payload: Record<string, unknown> = {
         name,
         color,
         birthday,
         avatarUrl: avatarPreview,
-      });
+      };
+      if (isAdult) {
+        payload.username = username.trim();
+        if (password) payload.password = password;
+        if (!member.canLogin && (!username.trim() || !password)) {
+          setError('Username and password are required so this adult can sign in.');
+          setSaving(false);
+          return;
+        }
+      }
+      await api.put(`/api/family/${member.id}`, payload);
       onSaved();
       onClose();
-    } catch {
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed');
       setSaving(false);
     }
   };
@@ -313,13 +329,26 @@ function MemberEditPopup({ member, onClose, onSaved }: EditPopupProps) {
           </div>
         </div>
 
-        <label className="flex items-center gap-3 py-1 opacity-50 cursor-not-allowed">
-          <input type="checkbox" checked={false} disabled className="w-5 h-5" />
-          <div>
-            <span className="text-text-bright text-sm">Can Log In</span>
-            <p className="text-text-dim text-xs">Not yet available</p>
+        {isAdult && (
+          <div className="space-y-3 bg-surface-light rounded-xl p-4">
+            <div>
+              <p className="text-text-bright text-sm font-medium">Sign-in</p>
+              <p className="text-text-dim text-xs mt-0.5">
+                {member.canLogin ? 'This adult can sign in on their own device.' : 'Set a username and password so they can sign in.'}
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm text-text-dim mb-1">Username</label>
+              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" className="w-full bg-surface-lighter text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary" />
+            </div>
+            <div>
+              <label className="block text-sm text-text-dim mb-1">{member.canLogin ? 'New password (optional)' : 'Password'}</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" className="w-full bg-surface-lighter text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary" />
+            </div>
           </div>
-        </label>
+        )}
+
+        {error && <p className="text-accent-red text-sm">{error}</p>}
 
         <button onClick={handleSave} disabled={saving || !name.trim()} className="w-full bg-accent-green text-bg font-bold py-3 rounded-xl min-h-[48px] disabled:opacity-50">
           {saving ? 'Saving...' : 'Save Changes'}
@@ -346,7 +375,9 @@ export function FamilyTab() {
   const [name, setName] = useState('');
   const [role, setRole] = useState<'parent' | 'kid'>('kid');
   const [color, setColor] = useState(COLORS[0]);
-  const [pin, setPin] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [formError, setFormError] = useState('');
 
   const load = () => {
     api.get<FamilyMember[]>('/api/family').then(setMembers).catch(() => {});
@@ -356,11 +387,23 @@ export function FamilyTab() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post('/api/family', { name, role, color, pin: pin || undefined });
-    setName('');
-    setPin('');
-    setShowForm(false);
-    load();
+    setFormError('');
+    try {
+      await api.post('/api/family', {
+        name,
+        role,
+        color,
+        username: role === 'parent' ? username.trim() : undefined,
+        password: role === 'parent' ? password : undefined,
+      });
+      setName('');
+      setUsername('');
+      setPassword('');
+      setShowForm(false);
+      load();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Could not add member');
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -405,11 +448,19 @@ export function FamilyTab() {
             </div>
           </div>
           {role === 'parent' && (
-            <div>
-              <label className="block text-sm text-text-dim mb-1">PIN (4-6 digits)</label>
-              <input type="password" inputMode="numeric" pattern="[0-9]{4,6}" value={pin} onChange={(e) => setPin(e.target.value)} className="w-full bg-surface-lighter text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary" maxLength={6} />
-            </div>
+            <>
+              <div>
+                <label className="block text-sm text-text-dim mb-1">Username</label>
+                <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} required autoComplete="off" className="w-full bg-surface-lighter text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary" />
+              </div>
+              <div>
+                <label className="block text-sm text-text-dim mb-1">Password</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} autoComplete="new-password" className="w-full bg-surface-lighter text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary" />
+                <p className="text-text-dim text-xs mt-1">They’ll sign in with this on their own phone or computer.</p>
+              </div>
+            </>
           )}
+          {formError && <p className="text-accent-red text-sm">{formError}</p>}
           <button type="submit" className="w-full bg-accent-green text-bg font-bold py-3 rounded-xl min-h-[48px] active:scale-95 transition-transform">
             Add {role === 'kid' ? 'Kid' : 'Parent'}
           </button>
@@ -429,7 +480,8 @@ export function FamilyTab() {
             <div className="flex-1">
               <p className="text-text-bright font-medium">{m.name}</p>
               <p className="text-text-dim text-sm capitalize">
-                {m.role}
+                {m.role === 'admin' ? 'adult (admin)' : m.role}
+                {m.canLogin ? ' · can sign in' : ''}
                 {m.birthday && ` · Age ${getAge(m.birthday)}`}
               </p>
             </div>

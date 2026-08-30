@@ -5,8 +5,9 @@ import { FamilyTab } from '../components/settings/FamilyTab';
 import { SourceManager } from '../components/calendar/SourceManager';
 import { IntegrationsTab } from '../components/settings/IntegrationsTab';
 import { InvitesTab } from '../components/settings/InvitesTab';
+import { KiosksTab } from '../components/settings/KiosksTab';
 
-type Tab = 'family' | 'calendars' | 'integrations' | 'invites';
+type Tab = 'family' | 'kiosks' | 'calendars' | 'integrations' | 'invites';
 
 export function Settings() {
   const { hasPermission } = useAuth();
@@ -14,6 +15,7 @@ export function Settings() {
 
   const tabs: { id: Tab; label: string; permission: string }[] = [
     { id: 'family', label: 'Family', permission: 'settings.view' },
+    { id: 'kiosks', label: 'Kiosks', permission: 'family.manage' },
     { id: 'invites', label: 'Invites', permission: 'invites.manage' },
     { id: 'calendars', label: 'Calendars', permission: 'settings.view' },
     { id: 'integrations', label: 'Integrations', permission: 'settings.edit' },
@@ -53,6 +55,7 @@ export function Settings() {
       </div>
 
       {activeTab === 'family' && <FamilyTab />}
+      {activeTab === 'kiosks' && <KiosksTab />}
       {activeTab === 'invites' && <InvitesTab />}
       {activeTab === 'calendars' && <SourceManager />}
       {activeTab === 'integrations' && <IntegrationsTab />}

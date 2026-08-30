@@ -38,7 +38,7 @@ export function Setup() {
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
           <h1 className="text-3xl font-bold text-text-bright">Welcome to SandersHome</h1>
-          <p className="text-text-dim mt-2">Create your family and admin account</p>
+          <p className="text-text-dim mt-2">Create your family and your adult account</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

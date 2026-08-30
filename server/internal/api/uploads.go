@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,39 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
+
+// isHEIF reports whether buf starts with an HEIC/HEIF ftyp box.
+// Android camera/gallery often labels these as image/jpeg or image.jpg;
+// Go's DetectContentType does not recognize them, so they would otherwise
+// be stored as .jpg and show as broken images in every browser that
+// trusts Content-Type (including the kiosk).
+func isHEIF(buf []byte) bool {
+	if len(buf) < 12 || string(buf[4:8]) != "ftyp" {
+		return false
+	}
+	boxSize := int(binary.BigEndian.Uint32(buf[0:4]))
+	if boxSize < 16 {
+		return false
+	}
+	if boxSize > len(buf) {
+		boxSize = len(buf)
+	}
+	payload := buf[8:boxSize]
+	if len(payload) >= 4 && string(payload[:4]) == "avif" {
+		return false
+	}
+	heifBrands := map[string]bool{
+		"heic": true, "heix": true, "hevc": true, "hevx": true,
+		"heim": true, "heis": true, "hevm": true, "hevs": true,
+		"mif1": true, "msf1": true, "heif": true,
+	}
+	for i := 0; i+4 <= len(payload); i += 4 {
+		if heifBrands[string(payload[i:i+4])] {
+			return true
+		}
+	}
+	return false
+}
 
 type UploadsHandler struct {
 	dir string
@@ -35,7 +69,12 @@ func (h *UploadsHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	// Read first 512 bytes to detect content type
 	buf := make([]byte, 512)
 	n, _ := file.Read(buf)
-	detected := http.DetectContentType(buf[:n])
+	head := buf[:n]
+	if isHEIF(head) {
+		writeError(w, http.StatusBadRequest, "HEIC photos aren't supported — the app converts them to JPEG before upload")
+		return
+	}
+	detected := http.DetectContentType(head)
 
 	// Seek back to start
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
@@ -59,7 +98,7 @@ func (h *UploadsHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		ext = strings.ToLower(filepath.Ext(header.Filename))
 	}
 
-	allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".gif": true, ".heic": true, ".heif": true}
+	allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".gif": true}
 	if !allowed[ext] {
 		writeError(w, http.StatusBadRequest, "unsupported image format")
 		return

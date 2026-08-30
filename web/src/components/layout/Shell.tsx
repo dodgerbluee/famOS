@@ -42,6 +42,9 @@ export function Shell() {
                 className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-surface-lighter transition-colors"
               >
                 <span className="text-sm font-medium text-text-bright">{user.name}</span>
+                {user.role === 'kiosk' && (
+                  <span className="text-[10px] uppercase tracking-wide text-text-dim bg-surface-lighter px-1.5 py-0.5 rounded">Kiosk</span>
+                )}
                 <svg
                   className={`w-4 h-4 text-text-dim transition-transform ${menuOpen ? 'rotate-180' : ''}`}
                   viewBox="0 0 20 20"
@@ -65,6 +68,7 @@ export function Shell() {
                       Settings
                     </button>
                   )}
+                  {user.role !== 'kiosk' && (
                   <button
                     onClick={() => { setMenuOpen(false); logout(); }}
                     className="w-full px-4 py-2.5 text-left text-sm text-accent-red hover:bg-surface-lighter transition-colors flex items-center gap-2"
@@ -76,6 +80,7 @@ export function Shell() {
                     </svg>
                     Logout
                   </button>
+                  )}
                 </div>
               )}
             </div>

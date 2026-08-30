@@ -68,8 +68,9 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 
 	// Handlers
 	familyHandler := &FamilyHandler{db: database, vikunja: svc.Vikunja, choreTemplates: svc.ChoreTemplates}
-	authHandler := &AuthHandler{db: database, cfg: cfg}
-	inviteHandler := NewInviteHandler(database, cfg)
+	authHandler := &AuthHandler{db: database, cfg: cfg, vikunja: svc.Vikunja}
+	inviteHandler := NewInviteHandler(database, cfg, svc.Vikunja)
+	kioskHandler := NewKioskHandler(database, cfg)
 	cashHandler := NewSandersCashHandler(svc.Cash, hub)
 	rewardsHandler := NewRewardsHandler(svc.Rewards, hub)
 	loc, err := time.LoadLocation(cfg.Timezone)
@@ -111,6 +112,9 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 	r.Post("/api/auth/pin-verify", authHandler.PinVerify)
 	r.Get("/api/invites/{token}", inviteHandler.Validate)
 	r.Post("/api/invites/accept", inviteHandler.Accept)
+	r.Post("/api/kiosks/pending", kioskHandler.StartPending)
+	r.Get("/api/kiosks/pending/{token}", kioskHandler.PendingStatus)
+	r.Post("/api/kiosks/claim", kioskHandler.Claim)
 
 	// ── Optional auth routes (kiosk-accessible reads) ──
 
@@ -176,6 +180,14 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 		r.Get("/api/auth/me", authHandler.Me)
 		r.Post("/api/auth/logout", authHandler.Logout)
 
+		// Kiosk pairing (adults approve a device)
+		r.With(auth.RequirePermission("family.manage")).Get("/api/kiosks", kioskHandler.List)
+		r.With(auth.RequirePermission("family.manage")).Post("/api/kiosks", kioskHandler.Create)
+		r.With(auth.RequirePermission("family.manage")).Post("/api/kiosks/{id}/pairing", kioskHandler.CreatePairing)
+		r.With(auth.RequirePermission("family.manage")).Post("/api/kiosks/{id}/logout", kioskHandler.Logout)
+		r.With(auth.RequirePermission("family.manage")).Delete("/api/kiosks/{id}", kioskHandler.Delete)
+		r.With(auth.RequirePermission("family.manage")).Post("/api/kiosks/approve", kioskHandler.Approve)
+
 		// Family management
 		r.With(auth.RequirePermission("family.manage")).Post("/api/family", familyHandler.Create)
 		r.With(auth.RequirePermission("family.manage")).Put("/api/family/{id}", familyHandler.Update)
@@ -218,8 +230,8 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 		r.With(auth.RequirePermission("chores.manage")).Delete("/api/chore-templates/{id}", choreTemplatesHandler.Delete)
 
 		// Tasks (adult task management)
-		r.Get("/api/tasks", tasksHandler.ListMyTasks)
-		r.Post("/api/tasks", tasksHandler.Create)
+		r.With(auth.RequirePermission("tasks.view")).Get("/api/tasks", tasksHandler.ListMyTasks)
+		r.With(auth.RequirePermission("tasks.view")).Post("/api/tasks", tasksHandler.Create)
 		r.Post("/api/tasks/{taskId}/complete", tasksHandler.Complete)
 		r.Post("/api/tasks/{taskId}/uncomplete", tasksHandler.Uncomplete)
 

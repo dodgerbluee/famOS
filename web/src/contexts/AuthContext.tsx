@@ -8,6 +8,8 @@ export interface AuthUser {
   familyId: string;
   color: string;
   username: string;
+  sessionId?: string;
+  sessionType?: 'user' | 'kiosk';
   permissions: Record<string, boolean>;
 }
 
@@ -29,11 +31,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [needsSetup, setNeedsSetup] = useState(false);
 
   useEffect(() => {
-    const kioskToken = import.meta.env.VITE_KIOSK_TOKEN;
-    if (kioskToken) {
-      document.cookie = `session=${kioskToken}; path=/; SameSite=Lax`;
-    }
-
     api.get<AuthUser>('/api/auth/me')
       .then((u) => setUser(u))
       .catch(() =>

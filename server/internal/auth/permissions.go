@@ -16,6 +16,7 @@ var RoleDefaults = map[string]map[string]bool{
 		"chores.view":        true,
 		"chores.manage":      true,
 		"chores.complete":    true,
+		"tasks.view":         true,
 		"settings.view":      true,
 		"settings.edit":      true,
 		"family.manage":      true,
@@ -36,7 +37,10 @@ var RoleDefaults = map[string]map[string]bool{
 		"chores.view":        true,
 		"chores.manage":      true,
 		"chores.complete":    true,
+		"tasks.view":         true,
 		"settings.view":      true,
+		"settings.edit":      true,
+		"family.manage":      true,
 		"invites.manage":     true,
 	},
 	"kid": {

@@ -25,7 +25,8 @@ type UserInfo struct {
 	Name        string
 	Role        string
 	Color       string
-	Username       string
+	Username    string
+	SessionID   string
 	SessionType string
 	Overrides   map[string]bool
 }
@@ -128,9 +129,11 @@ func CreateSession(database *db.DB, secret, memberID, sessionType string) (strin
 		expiry = 10 * 365 * 24 * time.Hour
 	}
 
+	id := uuid.New().String()
+	now := time.Now()
 	_, err := database.Exec(
-		`INSERT INTO sessions (id, member_id, token_hash, session_type, expires_at) VALUES (?, ?, ?, ?, ?)`,
-		uuid.New().String(), memberID, hash, sessionType, time.Now().Add(expiry),
+		`INSERT INTO sessions (id, member_id, token_hash, session_type, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		id, memberID, hash, sessionType, now.Add(expiry), now,
 	)
 	if err != nil {
 		return "", fmt.Errorf("create session: %w", err)
@@ -146,12 +149,12 @@ func ValidateSession(database *db.DB, secret, token string) (*UserInfo, error) {
 
 	hash := TokenHash(token)
 
-	var sessionType string
+	var sessionID, sessionType string
 	var expiresAt time.Time
 	err := database.QueryRow(
-		`SELECT session_type, expires_at FROM sessions WHERE token_hash = ? AND member_id = ?`,
+		`SELECT id, session_type, expires_at FROM sessions WHERE token_hash = ? AND member_id = ?`,
 		hash, memberID,
-	).Scan(&sessionType, &expiresAt)
+	).Scan(&sessionID, &sessionType, &expiresAt)
 	if err != nil {
 		return nil, fmt.Errorf("session not found")
 	}
@@ -159,6 +162,8 @@ func ValidateSession(database *db.DB, secret, token string) (*UserInfo, error) {
 		database.Exec(`DELETE FROM sessions WHERE token_hash = ?`, hash)
 		return nil, fmt.Errorf("session expired")
 	}
+
+	database.Exec(`UPDATE sessions SET last_seen_at = ? WHERE id = ?`, time.Now(), sessionID)
 
 	var name, role, familyID, color, username string
 	err = database.QueryRow(
@@ -178,6 +183,7 @@ func ValidateSession(database *db.DB, secret, token string) (*UserInfo, error) {
 		Role:        role,
 		Color:       color,
 		Username:    username,
+		SessionID:   sessionID,
 		SessionType: sessionType,
 		Overrides:   overrides,
 	}, nil
@@ -185,6 +191,31 @@ func ValidateSession(database *db.DB, secret, token string) (*UserInfo, error) {
 
 func DeleteSession(database *db.DB, tokenHash string) {
 	database.Exec(`DELETE FROM sessions WHERE token_hash = ?`, tokenHash)
+}
+
+func DeleteSessionsForMember(database *db.DB, memberID string) {
+	database.Exec(`DELETE FROM sessions WHERE member_id = ?`, memberID)
+}
+
+func RandomToken(nBytes int) (string, error) {
+	b := make([]byte, nBytes)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func HashSecret(secret string) string {
+	h := sha256.Sum256([]byte(secret))
+	return hex.EncodeToString(h[:])
+}
+
+func CheckSecret(hash, secret string) bool {
+	if hash == "" || secret == "" {
+		return false
+	}
+	expected := HashSecret(secret)
+	return hmac.Equal([]byte(hash), []byte(expected))
 }
 
 func CleanExpiredSessions(database *db.DB) {

@@ -56,6 +56,8 @@ func (d *DB) Migrate() error {
 	addColumnIfNotExists(d, "family_members", "username", "TEXT DEFAULT ''")
 	addColumnIfNotExists(d, "family_members", "birthday", "TEXT DEFAULT ''")
 	addColumnIfNotExists(d, "family_members", "vikunja_project_id", "INTEGER DEFAULT 0")
+	addColumnIfNotExists(d, "sessions", "last_seen_at", "DATETIME")
+	addColumnIfNotExists(d, "sessions", "user_agent", "TEXT DEFAULT ''")
 
 	// Create default family for existing members
 	var memberCount int
@@ -189,6 +191,23 @@ CREATE TABLE IF NOT EXISTS sessions (
 	member_id TEXT NOT NULL REFERENCES family_members(id) ON DELETE CASCADE,
 	token_hash TEXT NOT NULL UNIQUE,
 	session_type TEXT NOT NULL DEFAULT 'user' CHECK(session_type IN ('user', 'kiosk')),
+	expires_at DATETIME NOT NULL,
+	last_seen_at DATETIME,
+	user_agent TEXT DEFAULT '',
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS kiosk_pairing_tokens (
+	id TEXT PRIMARY KEY,
+	token TEXT NOT NULL UNIQUE,
+	family_id TEXT NOT NULL REFERENCES families(id),
+	kiosk_member_id TEXT REFERENCES family_members(id) ON DELETE CASCADE,
+	created_by TEXT DEFAULT '',
+	name TEXT DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'claimed', 'revoked')),
+	poll_secret_hash TEXT DEFAULT '',
+	claim_token TEXT DEFAULT '',
+	claim_token_hash TEXT DEFAULT '',
 	expires_at DATETIME NOT NULL,
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

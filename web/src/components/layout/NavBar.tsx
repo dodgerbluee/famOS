@@ -40,7 +40,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    to: '/tasks', label: 'Tasks', permission: 'dashboard.view',
+    to: '/tasks', label: 'Tasks', permission: 'tasks.view',
     icon: (active) => (
       <svg className="w-[22px] h-[22px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.4 : 1.8} strokeLinecap="round" strokeLinejoin="round">
         <line x1="8" y1="6" x2="21" y2="6" />

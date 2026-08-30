@@ -16,6 +16,9 @@ import { Tasks } from './pages/Tasks';
 import { Login } from './pages/Login';
 import { Setup } from './pages/Setup';
 import { JoinFamily } from './pages/JoinFamily';
+import { PairKiosk } from './pages/PairKiosk';
+import { SetupKiosk } from './pages/SetupKiosk';
+import { ApproveKiosk } from './pages/ApproveKiosk';
 import { useWebSocket } from './hooks/useWebSocket';
 import { MotionAlertTray } from './components/cameras/MotionAlert';
 import { Screensaver } from './components/Screensaver';
@@ -79,6 +82,9 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/setup" element={<Setup />} />
           <Route path="/join/:token" element={<JoinFamily />} />
+          <Route path="/kiosk/setup" element={<SetupKiosk />} />
+          <Route path="/kiosk/pair/:token" element={<PairKiosk />} />
+          <Route path="/kiosk/approve/:token" element={<ApproveKiosk />} />
           <Route element={<RequireAuth><Shell /></RequireAuth>}>
             <Route path="/" element={<Home />} />
             <Route path="/calendar" element={<Calendar />} />

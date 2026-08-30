@@ -1,3 +1,5 @@
+import { toJpegFile } from '../lib/toJpeg';
+
 const BASE_URL = import.meta.env.VITE_API_URL || '';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -11,7 +13,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    if (res.status === 401 && !path.includes('/api/auth/') && !path.includes('/api/setup/')) {
+    if (res.status === 401 && !path.includes('/api/auth/') && !path.includes('/api/setup/') && !path.includes('/api/kiosks/')) {
       window.location.href = '/login';
       throw new Error('Session expired');
     }
@@ -35,8 +37,14 @@ export const api = {
     request<T>(path, { method: 'DELETE' }),
 
   upload: async (path: string, file: File, fieldName = 'photo'): Promise<{ url: string }> => {
+    let jpeg: File;
+    try {
+      jpeg = await toJpegFile(file);
+    } catch {
+      throw new Error('Could not read this photo. Try a new picture, or a JPEG/PNG.');
+    }
     const form = new FormData();
-    form.append(fieldName, file);
+    form.append(fieldName, jpeg);
     const res = await fetch(`${BASE_URL}${path}`, {
       method: 'POST',
       body: form,
@@ -58,7 +66,21 @@ export interface FamilyMember {
   color: string;
   sortOrder: number;
   birthday: string;
+  vikunjaProjectId?: number;
+  canLogin: boolean;
+  username?: string;
   createdAt: string;
+}
+
+export interface Kiosk {
+  id: string;
+  name: string;
+  paired: boolean;
+  lastSeenAt?: string;
+  userAgent?: string;
+  createdAt: string;
+  pairingToken?: string;
+  expiresAt?: string;
 }
 
 export interface SandersCashAccount {

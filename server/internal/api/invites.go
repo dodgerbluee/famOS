@@ -11,15 +11,17 @@ import (
 	"github.com/sandershome/server/internal/auth"
 	"github.com/sandershome/server/internal/config"
 	"github.com/sandershome/server/internal/db"
+	"github.com/sandershome/server/internal/service"
 )
 
 type InviteHandler struct {
-	db  *db.DB
-	cfg *config.Config
+	db      *db.DB
+	cfg     *config.Config
+	vikunja *service.VikunjaService
 }
 
-func NewInviteHandler(database *db.DB, cfg *config.Config) *InviteHandler {
-	return &InviteHandler{db: database, cfg: cfg}
+func NewInviteHandler(database *db.DB, cfg *config.Config, vikunja *service.VikunjaService) *InviteHandler {
+	return &InviteHandler{db: database, cfg: cfg, vikunja: vikunja}
 }
 
 func (h *InviteHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -225,6 +227,8 @@ func (h *InviteHandler) Accept(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	ensureVikunjaProject(r.Context(), h.db, h.vikunja, memberID, req.Name, role)
 
 	token, err := auth.CreateSession(h.db, h.cfg.SessionSecret, memberID, "user")
 	if err != nil {

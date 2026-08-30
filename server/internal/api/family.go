@@ -1,9 +1,11 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -27,18 +29,26 @@ type FamilyMember struct {
 	SortOrder        int    `json:"sortOrder"`
 	Birthday         string `json:"birthday"`
 	VikunjaProjectID int64  `json:"vikunjaProjectId"`
+	CanLogin         bool   `json:"canLogin"`
+	Username         string `json:"username,omitempty"`
 	CreatedAt        string `json:"createdAt"`
 }
 
 type CreateFamilyMemberRequest struct {
-	Name  string `json:"name"`
-	Role  string `json:"role"`
-	Color string `json:"color"`
-	Pin   string `json:"pin,omitempty"`
+	Name     string `json:"name"`
+	Role     string `json:"role"`
+	Color    string `json:"color"`
+	Pin      string `json:"pin,omitempty"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
 }
 
 func (h *FamilyHandler) List(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.db.Query(`SELECT id, name, role, avatar_url, color, sort_order, COALESCE(birthday, ''), COALESCE(vikunja_project_id, 0), created_at FROM family_members ORDER BY sort_order, name`)
+	if h.vikunja != nil {
+		backfillVikunjaProjects(r.Context(), h.db, h.vikunja)
+	}
+
+	rows, err := h.db.Query(`SELECT id, name, role, avatar_url, color, sort_order, COALESCE(birthday, ''), COALESCE(vikunja_project_id, 0), CASE WHEN COALESCE(password_hash, '') != '' THEN 1 ELSE 0 END, COALESCE(username, ''), created_at FROM family_members WHERE role != 'kiosk' ORDER BY sort_order, name`)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list family members")
 		return
@@ -48,10 +58,12 @@ func (h *FamilyHandler) List(w http.ResponseWriter, r *http.Request) {
 	members := []FamilyMember{}
 	for rows.Next() {
 		var m FamilyMember
-		if err := rows.Scan(&m.ID, &m.Name, &m.Role, &m.AvatarURL, &m.Color, &m.SortOrder, &m.Birthday, &m.VikunjaProjectID, &m.CreatedAt); err != nil {
+		var canLogin int
+		if err := rows.Scan(&m.ID, &m.Name, &m.Role, &m.AvatarURL, &m.Color, &m.SortOrder, &m.Birthday, &m.VikunjaProjectID, &canLogin, &m.Username, &m.CreatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to scan family member")
 			return
 		}
+		m.CanLogin = canLogin == 1
 		members = append(members, m)
 	}
 
@@ -61,18 +73,23 @@ func (h *FamilyHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *FamilyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var m FamilyMember
-	err := h.db.QueryRow(`SELECT id, name, role, avatar_url, color, sort_order, COALESCE(birthday, ''), COALESCE(vikunja_project_id, 0), created_at FROM family_members WHERE id = ?`, id).
-		Scan(&m.ID, &m.Name, &m.Role, &m.AvatarURL, &m.Color, &m.SortOrder, &m.Birthday, &m.VikunjaProjectID, &m.CreatedAt)
+	var canLogin int
+	err := h.db.QueryRow(`SELECT id, name, role, avatar_url, color, sort_order, COALESCE(birthday, ''), COALESCE(vikunja_project_id, 0), CASE WHEN COALESCE(password_hash, '') != '' THEN 1 ELSE 0 END, COALESCE(username, ''), created_at FROM family_members WHERE id = ?`, id).
+		Scan(&m.ID, &m.Name, &m.Role, &m.AvatarURL, &m.Color, &m.SortOrder, &m.Birthday, &m.VikunjaProjectID, &canLogin, &m.Username, &m.CreatedAt)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "family member not found")
 		return
 	}
+	m.CanLogin = canLogin == 1
 	writeJSON(w, http.StatusOK, m)
 }
 
-func (h *FamilyHandler) getOrCreateFamilyProject(r *http.Request) int64 {
+func getOrCreateFamilyProject(ctx context.Context, database *db.DB, vikunja *service.VikunjaService) int64 {
+	if vikunja == nil {
+		return 0
+	}
 	var raw string
-	err := h.db.QueryRow(`SELECT value FROM app_settings WHERE key = 'vikunja_family_project_id'`).Scan(&raw)
+	err := database.QueryRow(`SELECT value FROM app_settings WHERE key = 'vikunja_family_project_id'`).Scan(&raw)
 	if err == nil && raw != "" {
 		var id int64
 		if json.Unmarshal([]byte(raw), &id) == nil && id > 0 {
@@ -80,15 +97,75 @@ func (h *FamilyHandler) getOrCreateFamilyProject(r *http.Request) int64 {
 		}
 	}
 
-	projectID, err := h.vikunja.CreateProject(r.Context(), "Family", 0)
+	projectID, err := vikunja.CreateProject(ctx, "Family", 0)
 	if err != nil {
 		log.Printf("failed to create Vikunja family project: %v", err)
 		return 0
 	}
 
 	encoded, _ := json.Marshal(projectID)
-	h.db.Exec(`INSERT INTO app_settings (key, value) VALUES ('vikunja_family_project_id', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(encoded))
+	database.Exec(`INSERT INTO app_settings (key, value) VALUES ('vikunja_family_project_id', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(encoded))
 	return projectID
+}
+
+func ensureVikunjaProject(ctx context.Context, database *db.DB, vikunja *service.VikunjaService, memberID, name, role string) {
+	if vikunja == nil || role == "kiosk" || memberID == "" || name == "" {
+		return
+	}
+
+	var projectID int64
+	database.QueryRow(`SELECT COALESCE(vikunja_project_id, 0) FROM family_members WHERE id = ?`, memberID).Scan(&projectID)
+	if projectID > 0 {
+		return
+	}
+
+	parentProjectID := getOrCreateFamilyProject(ctx, database, vikunja)
+	if parentProjectID == 0 {
+		return
+	}
+
+	newID, err := vikunja.CreateProject(ctx, name, parentProjectID)
+	if err != nil {
+		log.Printf("failed to create Vikunja project for member %s: %v", name, err)
+		return
+	}
+	database.Exec(`UPDATE family_members SET vikunja_project_id = ? WHERE id = ?`, newID, memberID)
+}
+
+func backfillVikunjaProjects(ctx context.Context, database *db.DB, vikunja *service.VikunjaService) {
+	if vikunja == nil || !vikunjaConfigured(database) {
+		return
+	}
+
+	rows, err := database.Query(`SELECT id, name, role FROM family_members WHERE role != 'kiosk' AND COALESCE(vikunja_project_id, 0) = 0`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	type member struct {
+		id, name, role string
+	}
+	var missing []member
+	for rows.Next() {
+		var m member
+		if rows.Scan(&m.id, &m.name, &m.role) == nil {
+			missing = append(missing, m)
+		}
+	}
+	for _, m := range missing {
+		ensureVikunjaProject(ctx, database, vikunja, m.id, m.name, m.role)
+	}
+}
+
+func vikunjaConfigured(database *db.DB) bool {
+	var rawURL, rawKey string
+	database.QueryRow(`SELECT value FROM app_settings WHERE key = 'vikunja_url'`).Scan(&rawURL)
+	database.QueryRow(`SELECT value FROM app_settings WHERE key = 'vikunja_api_key'`).Scan(&rawKey)
+	var url, key string
+	json.Unmarshal([]byte(rawURL), &url)
+	json.Unmarshal([]byte(rawKey), &key)
+	return strings.TrimSpace(url) != "" && strings.TrimSpace(key) != ""
 }
 
 func (h *FamilyHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -108,6 +185,19 @@ func (h *FamilyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isAdult := req.Role == "admin" || req.Role == "parent"
+	if isAdult {
+		req.Username = strings.TrimSpace(req.Username)
+		if req.Username == "" || req.Password == "" {
+			writeError(w, http.StatusBadRequest, "username and password are required for adult accounts")
+			return
+		}
+		if usernameTaken(h.db, req.Username, "") {
+			writeError(w, http.StatusConflict, "username already in use")
+			return
+		}
+	}
+
 	id := uuid.New().String()
 	var pinHash string
 	if req.Pin != "" {
@@ -115,6 +205,16 @@ func (h *FamilyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		pinHash, err = auth.HashPin(req.Pin)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to hash pin")
+			return
+		}
+	}
+
+	var passwordHash string
+	if req.Password != "" {
+		var err error
+		passwordHash, err = auth.HashPassword(req.Password)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to hash password")
 			return
 		}
 	}
@@ -133,8 +233,8 @@ func (h *FamilyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	_, err = tx.Exec(`INSERT INTO family_members (id, name, role, pin_hash, color, family_id) VALUES (?, ?, ?, ?, ?, ?)`,
-		id, req.Name, req.Role, pinHash, req.Color, familyID)
+	_, err = tx.Exec(`INSERT INTO family_members (id, name, role, pin_hash, color, family_id, username, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, req.Name, req.Role, pinHash, req.Color, familyID, req.Username, passwordHash)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create family member")
 		return
@@ -154,17 +254,7 @@ func (h *FamilyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.vikunja != nil {
-		parentProjectID := h.getOrCreateFamilyProject(r)
-		if parentProjectID > 0 {
-			projectID, err := h.vikunja.CreateProject(r.Context(), req.Name, parentProjectID)
-			if err != nil {
-				log.Printf("failed to create Vikunja project for member %s: %v", req.Name, err)
-			} else {
-				h.db.Exec(`UPDATE family_members SET vikunja_project_id = ? WHERE id = ?`, projectID, id)
-			}
-		}
-	}
+	ensureVikunjaProject(r.Context(), h.db, h.vikunja, id, req.Name, req.Role)
 
 	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
 }
@@ -178,9 +268,18 @@ func (h *FamilyHandler) Update(w http.ResponseWriter, r *http.Request) {
 		AvatarURL *string `json:"avatarUrl"`
 		SortOrder *int    `json:"sortOrder"`
 		Birthday  *string `json:"birthday"`
+		Username  *string `json:"username"`
+		Password  *string `json:"password"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	var role string
+	err := h.db.QueryRow(`SELECT role FROM family_members WHERE id = ?`, id).Scan(&role)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "family member not found")
 		return
 	}
 
@@ -199,22 +298,32 @@ func (h *FamilyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.Birthday != nil {
 		h.db.Exec(`UPDATE family_members SET birthday = ? WHERE id = ?`, *req.Birthday, id)
 	}
+	if req.Username != nil {
+		username := strings.TrimSpace(*req.Username)
+		if username != "" && usernameTaken(h.db, username, id) {
+			writeError(w, http.StatusConflict, "username already in use")
+			return
+		}
+		h.db.Exec(`UPDATE family_members SET username = ? WHERE id = ?`, username, id)
+	}
+	if req.Password != nil && *req.Password != "" {
+		hash, err := auth.HashPassword(*req.Password)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to hash password")
+			return
+		}
+		h.db.Exec(`UPDATE family_members SET password_hash = ? WHERE id = ?`, hash, id)
+	}
 
-	if h.vikunja != nil {
+	var memberName string
+	h.db.QueryRow(`SELECT name FROM family_members WHERE id = ?`, id).Scan(&memberName)
+
+	if h.vikunja != nil && role != "kiosk" {
 		var vikunjaProjectID int64
-		var memberName string
-		h.db.QueryRow(`SELECT COALESCE(vikunja_project_id, 0), name FROM family_members WHERE id = ?`, id).Scan(&vikunjaProjectID, &memberName)
+		h.db.QueryRow(`SELECT COALESCE(vikunja_project_id, 0) FROM family_members WHERE id = ?`, id).Scan(&vikunjaProjectID)
 
 		if vikunjaProjectID == 0 {
-			parentProjectID := h.getOrCreateFamilyProject(r)
-			if parentProjectID > 0 {
-				newProjectID, err := h.vikunja.CreateProject(r.Context(), memberName, parentProjectID)
-				if err != nil {
-					log.Printf("failed to create Vikunja project for member %s: %v", memberName, err)
-				} else {
-					h.db.Exec(`UPDATE family_members SET vikunja_project_id = ? WHERE id = ?`, newProjectID, id)
-				}
-			}
+			ensureVikunjaProject(r.Context(), h.db, h.vikunja, id, memberName, role)
 		} else if req.Name != nil {
 			if err := h.vikunja.UpdateProject(r.Context(), vikunjaProjectID, *req.Name); err != nil {
 				log.Printf("failed to rename Vikunja project %d: %v", vikunjaProjectID, err)
@@ -228,9 +337,27 @@ func (h *FamilyHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *FamilyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	// Look up Vikunja project ID before deleting
+	if user := auth.UserFromContext(r.Context()); user != nil && user.MemberID == id {
+		writeError(w, http.StatusBadRequest, "you cannot remove your own account")
+		return
+	}
+
+	var role string
 	var vikunjaProjectID int64
-	h.db.QueryRow(`SELECT COALESCE(vikunja_project_id, 0) FROM family_members WHERE id = ?`, id).Scan(&vikunjaProjectID)
+	err := h.db.QueryRow(`SELECT role, COALESCE(vikunja_project_id, 0) FROM family_members WHERE id = ?`, id).Scan(&role, &vikunjaProjectID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "family member not found")
+		return
+	}
+
+	if role == "admin" {
+		var adminCount int
+		h.db.QueryRow(`SELECT COUNT(*) FROM family_members WHERE role = 'admin'`).Scan(&adminCount)
+		if adminCount <= 1 {
+			writeError(w, http.StatusBadRequest, "cannot remove the last admin")
+			return
+		}
+	}
 
 	result, err := h.db.Exec(`DELETE FROM family_members WHERE id = ?`, id)
 	if err != nil {
@@ -243,7 +370,6 @@ func (h *FamilyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Clean up Vikunja project
 	if h.vikunja != nil && vikunjaProjectID > 0 {
 		if err := h.vikunja.DeleteProject(r.Context(), vikunjaProjectID); err != nil {
 			log.Printf("failed to delete Vikunja project %d for member %s: %v", vikunjaProjectID, id, err)
@@ -257,4 +383,17 @@ func (h *FamilyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func usernameTaken(database *db.DB, username, excludeID string) bool {
+	if username == "" {
+		return false
+	}
+	var count int
+	if excludeID == "" {
+		database.QueryRow(`SELECT COUNT(*) FROM family_members WHERE username = ?`, username).Scan(&count)
+	} else {
+		database.QueryRow(`SELECT COUNT(*) FROM family_members WHERE username = ? AND id != ?`, username, excludeID).Scan(&count)
+	}
+	return count > 0
 }

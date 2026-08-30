@@ -1,17 +1,20 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 export function Login() {
   const { login, user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const nextRaw = searchParams.get('next') || '/';
+  const next = nextRaw.startsWith('/') ? nextRaw : '/';
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   if (user) {
-    navigate('/', { replace: true });
+    navigate(next, { replace: true });
     return null;
   }
 
@@ -21,7 +24,7 @@ export function Login() {
     setSubmitting(true);
     try {
       await login(username, password);
-      navigate('/', { replace: true });
+      navigate(next, { replace: true });
     } catch {
       setError('Invalid username or password');
     } finally {
@@ -72,6 +75,11 @@ export function Login() {
             {submitting ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
+
+        <p className="text-center text-sm text-text-dim">
+          Setting up a wall tablet?{' '}
+          <Link to="/kiosk/setup" className="text-primary underline">Use as kiosk</Link>
+        </p>
       </div>
     </div>
   );

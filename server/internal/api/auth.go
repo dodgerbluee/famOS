@@ -9,11 +9,13 @@ import (
 	"github.com/sandershome/server/internal/auth"
 	"github.com/sandershome/server/internal/config"
 	"github.com/sandershome/server/internal/db"
+	"github.com/sandershome/server/internal/service"
 )
 
 type AuthHandler struct {
-	db  *db.DB
-	cfg *config.Config
+	db      *db.DB
+	cfg     *config.Config
+	vikunja *service.VikunjaService
 }
 
 func (h *AuthHandler) SetupStatus(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +73,8 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	ensureVikunjaProject(r.Context(), h.db, h.vikunja, memberID, req.Name, "admin")
 
 	token, err := auth.CreateSession(h.db, h.cfg.SessionSecret, memberID, "user")
 	if err != nil {
@@ -174,6 +178,8 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		"familyId":    user.FamilyID,
 		"color":       user.Color,
 		"username":    user.Username,
+		"sessionId":   user.SessionID,
+		"sessionType": user.SessionType,
 		"permissions": permissions,
 	})
 }
