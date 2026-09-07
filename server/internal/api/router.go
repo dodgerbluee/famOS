@@ -17,6 +17,7 @@ import (
 	"github.com/sandershome/server/internal/config"
 	"github.com/sandershome/server/internal/db"
 	"github.com/sandershome/server/internal/frigate"
+	"github.com/sandershome/server/internal/oauth"
 	"github.com/sandershome/server/internal/service"
 )
 
@@ -92,6 +93,10 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 	tasksHandler := NewTasksHandler(svc.Vikunja, database)
 	uploadsHandler := NewUploadsHandler(filepath.Dir(cfg.DatabasePath))
 	immichHandler := NewImmichHandler(service.NewImmichService(database))
+	oauthReg := oauth.NewRegistry(database, cfg)
+	oauthReg.Load()
+	oauthHandler := NewOAuthHandler(database, cfg, svc.Vikunja, oauthReg)
+	oauthAdminHandler := NewOAuthAdminHandler(database, oauthReg)
 
 	// Middleware
 	authMw := auth.AuthMiddleware(database, cfg.SessionSecret)
@@ -110,6 +115,10 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 	r.Post("/api/setup", authHandler.Setup)
 	r.Post("/api/auth/login", authHandler.Login)
 	r.Post("/api/auth/pin-verify", authHandler.PinVerify)
+	r.Get("/api/auth/oauth/providers", oauthHandler.Providers)
+	r.Get("/api/auth/oauth/login", oauthHandler.Login)
+	r.Get("/api/auth/oauth/callback", oauthHandler.Callback)
+	r.Post("/api/auth/oauth/link", oauthHandler.Link)
 	r.Get("/api/invites/{token}", inviteHandler.Validate)
 	r.Post("/api/invites/accept", inviteHandler.Accept)
 	r.Post("/api/kiosks/pending", kioskHandler.StartPending)
@@ -257,6 +266,11 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 
 		// Immich test
 		r.With(auth.RequirePermission("settings.edit")).Post("/api/immich/test", immichHandler.Test)
+
+		r.With(auth.RequirePermission("settings.edit")).Get("/api/admin/oauth-providers", oauthAdminHandler.List)
+		r.With(auth.RequirePermission("settings.edit")).Post("/api/admin/oauth-providers", oauthAdminHandler.Create)
+		r.With(auth.RequirePermission("settings.edit")).Put("/api/admin/oauth-providers/{id}", oauthAdminHandler.Update)
+		r.With(auth.RequirePermission("settings.edit")).Delete("/api/admin/oauth-providers/{id}", oauthAdminHandler.Delete)
 
 		// Invites
 		r.With(auth.RequirePermission("invites.manage")).Post("/api/invites", inviteHandler.Create)

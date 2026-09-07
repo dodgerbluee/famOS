@@ -19,6 +19,7 @@ import { JoinFamily } from './pages/JoinFamily';
 import { PairKiosk } from './pages/PairKiosk';
 import { SetupKiosk } from './pages/SetupKiosk';
 import { ApproveKiosk } from './pages/ApproveKiosk';
+import { OAuthComplete } from './pages/OAuthComplete';
 import { useWebSocket } from './hooks/useWebSocket';
 import { MotionAlertTray } from './components/cameras/MotionAlert';
 import { Screensaver } from './components/Screensaver';
@@ -79,6 +80,7 @@ export default function App() {
         <Screensaver />
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/auth/oauth/complete" element={<OAuthComplete />} />
           <Route path="/setup" element={<Setup />} />
           <Route path="/join/:token" element={<JoinFamily />} />
           <Route path="/kiosk/setup" element={<SetupKiosk />} />

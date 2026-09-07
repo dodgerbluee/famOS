@@ -54,6 +54,9 @@ export const api = {
       const body = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error(body.error || res.statusText);
     }
+    if (res.status === 204) {
+      return undefined as T;
+    }
     return res.json();
   },
 };
@@ -324,4 +327,29 @@ export interface VikunjaTaskSimple {
   dueDate: string;
   priority: number;
   projectId: number;
+}
+
+export interface OAuthPublicProvider {
+  name: string;
+  displayName: string;
+}
+
+export interface OAuthProvidersResponse {
+  providers: OAuthPublicProvider[];
+  allowLocalLogin: boolean;
+}
+
+export interface OAuthProviderConfig {
+  id: string;
+  name: string;
+  displayName: string;
+  providerType: 'authentik' | 'generic_oidc';
+  clientId: string;
+  issuerUrl: string;
+  scopes: string;
+  autoRegister: boolean;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+  hasClientSecret: boolean;
 }

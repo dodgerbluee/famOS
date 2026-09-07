@@ -53,6 +53,7 @@ Most settings are managed in-app via **Settings**:
 | AI briefing provider (Ollama) | Settings > Integrations > AI Briefing |
 | Family members | Settings > Family Members |
 | MQTT broker (motion alerts) | Settings > Integrations > MQTT |
+| SSO / OpenID Connect | Settings > SSO |
 
 ### Environment Variables
 
@@ -63,6 +64,13 @@ These can also be set as env vars (useful for Docker). In-app settings override 
 | `DATABASE_PATH` | `sandershome.db` | Path to SQLite database |
 | `PORT` | `8080` | API server port |
 | `SESSION_SECRET` | (required) | Secret for session cookies |
+| `OAUTH_PROVIDER` | | Env-var OIDC provider type (`authentik` or `generic_oidc`) |
+| `OAUTH_CLIENT_ID` | | OIDC client ID (with `OAUTH_PROVIDER`) |
+| `OAUTH_CLIENT_SECRET` | | OIDC client secret |
+| `OAUTH_ISSUER_URL` | | OIDC issuer URL |
+| `OAUTH_SCOPES` | `openid,profile,email` | Comma-separated OIDC scopes |
+| `OAUTH_AUTO_REGISTER` | `true` | Create a parent account on first SSO sign-in |
+| `OAUTH_ALLOW_LOCAL_LOGIN` | `true` | Show username/password on the login page |
 | `FRONTEND_URL` | `http://localhost:3000` | CORS origin for the frontend |
 | `AI_PROVIDER` | `ollama` | AI provider (`ollama`) |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama server URL |

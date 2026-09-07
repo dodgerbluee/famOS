@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -40,6 +41,16 @@ type Config struct {
 	FrontendURL string
 	StaticDir   string
 	Timezone    string
+
+	// OIDC (env fallback; DB providers take precedence)
+	OAuthProvider        string
+	OAuthClientID        string
+	OAuthClientSecret    string
+	OAuthIssuerURL       string
+	OAuthScopes          string
+	OAuthDisplayName     string
+	OAuthAutoRegister    bool
+	OAuthAllowLocalLogin bool
 }
 
 func Load() *Config {
@@ -75,6 +86,15 @@ func Load() *Config {
 		FrontendURL: envStr("FRONTEND_URL", "http://localhost:5173"),
 		StaticDir:   envStr("STATIC_DIR", ""),
 		Timezone:    timezone,
+
+		OAuthProvider:        strings.ToLower(strings.TrimSpace(envStr("OAUTH_PROVIDER", ""))),
+		OAuthClientID:        envStr("OAUTH_CLIENT_ID", ""),
+		OAuthClientSecret:    envStr("OAUTH_CLIENT_SECRET", ""),
+		OAuthIssuerURL:       envStr("OAUTH_ISSUER_URL", ""),
+		OAuthScopes:          envStr("OAUTH_SCOPES", "openid,profile,email"),
+		OAuthDisplayName:     envStr("OAUTH_DISPLAY_NAME", ""),
+		OAuthAutoRegister:    envBool("OAUTH_AUTO_REGISTER", true),
+		OAuthAllowLocalLogin: envBool("OAUTH_ALLOW_LOCAL_LOGIN", true),
 	}
 }
 
@@ -126,6 +146,19 @@ func envFloat(key string, fallback float64) float64 {
 		}
 	}
 	return fallback
+}
+
+func envBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "false", "0", "no", "off":
+		return false
+	default:
+		return true
+	}
 }
 
 func envTimezone(key, fallback string) string {

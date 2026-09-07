@@ -89,6 +89,14 @@ func (d *DB) Migrate() error {
 	// Rebuild family_members if CHECK constraint needs expanding
 	rebuildFamilyMembersIfNeeded(d)
 
+	addColumnIfNotExists(d, "family_members", "oauth_provider", "TEXT DEFAULT ''")
+	addColumnIfNotExists(d, "family_members", "oauth_provider_id", "TEXT DEFAULT ''")
+	d.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_family_members_oauth
+		ON family_members (oauth_provider, oauth_provider_id)
+		WHERE oauth_provider != '' AND oauth_provider_id != ''`)
+	d.Exec(`CREATE INDEX IF NOT EXISTS idx_oauth_states_created_at ON oauth_states(created_at)`)
+	d.Exec(`CREATE INDEX IF NOT EXISTS idx_oauth_providers_enabled ON oauth_providers(enabled)`)
+
 	return nil
 }
 
@@ -225,6 +233,8 @@ CREATE TABLE IF NOT EXISTS family_members (
 	family_id TEXT DEFAULT '' REFERENCES families(id),
 	username TEXT DEFAULT '',
 	password_hash TEXT DEFAULT '',
+	oauth_provider TEXT DEFAULT '',
+	oauth_provider_id TEXT DEFAULT '',
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -237,6 +247,31 @@ CREATE TABLE IF NOT EXISTS sessions (
 	last_seen_at DATETIME,
 	user_agent TEXT DEFAULT '',
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS oauth_states (
+	id TEXT PRIMARY KEY,
+	state TEXT NOT NULL UNIQUE,
+	code_verifier TEXT NOT NULL,
+	nonce TEXT NOT NULL,
+	redirect_uri TEXT DEFAULT '',
+	provider_name TEXT DEFAULT '',
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS oauth_providers (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL UNIQUE,
+	display_name TEXT NOT NULL,
+	provider_type TEXT NOT NULL,
+	client_id TEXT NOT NULL,
+	client_secret TEXT NOT NULL,
+	issuer_url TEXT NOT NULL,
+	scopes TEXT NOT NULL DEFAULT 'openid,profile,email',
+	auto_register INTEGER NOT NULL DEFAULT 1,
+	enabled INTEGER NOT NULL DEFAULT 1,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS kiosk_pairing_tokens (

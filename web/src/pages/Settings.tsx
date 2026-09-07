@@ -6,8 +6,9 @@ import { SourceManager } from '../components/calendar/SourceManager';
 import { IntegrationsTab } from '../components/settings/IntegrationsTab';
 import { InvitesTab } from '../components/settings/InvitesTab';
 import { KiosksTab } from '../components/settings/KiosksTab';
+import { SsoTab } from '../components/settings/SsoTab';
 
-type Tab = 'family' | 'kiosks' | 'calendars' | 'integrations' | 'invites';
+type Tab = 'family' | 'kiosks' | 'calendars' | 'integrations' | 'invites' | 'sso';
 
 export function Settings() {
   const { hasPermission } = useAuth();
@@ -16,6 +17,7 @@ export function Settings() {
   const tabs: { id: Tab; label: string; permission: string }[] = [
     { id: 'family', label: 'Family', permission: 'settings.view' },
     { id: 'kiosks', label: 'Kiosks', permission: 'family.manage' },
+    { id: 'sso', label: 'SSO', permission: 'settings.edit' },
     { id: 'invites', label: 'Invites', permission: 'invites.manage' },
     { id: 'calendars', label: 'Calendars', permission: 'settings.view' },
     { id: 'integrations', label: 'Integrations', permission: 'settings.edit' },
@@ -56,6 +58,7 @@ export function Settings() {
 
       {activeTab === 'family' && <FamilyTab />}
       {activeTab === 'kiosks' && <KiosksTab />}
+      {activeTab === 'sso' && <SsoTab />}
       {activeTab === 'invites' && <InvitesTab />}
       {activeTab === 'calendars' && <SourceManager />}
       {activeTab === 'integrations' && <IntegrationsTab />}
