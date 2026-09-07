@@ -152,10 +152,11 @@ func ValidateSession(database *db.DB, secret, token string) (*UserInfo, error) {
 
 	var sessionID, sessionType string
 	var expiresAt time.Time
+	var lastSeen sql.NullTime
 	err := database.QueryRow(
-		`SELECT id, session_type, expires_at FROM sessions WHERE token_hash = ? AND member_id = ?`,
+		`SELECT id, session_type, expires_at, last_seen_at FROM sessions WHERE token_hash = ? AND member_id = ?`,
 		hash, memberID,
-	).Scan(&sessionID, &sessionType, &expiresAt)
+	).Scan(&sessionID, &sessionType, &expiresAt, &lastSeen)
 	if err != nil {
 		return nil, fmt.Errorf("session not found")
 	}
@@ -164,7 +165,12 @@ func ValidateSession(database *db.DB, secret, token string) (*UserInfo, error) {
 		return nil, fmt.Errorf("session expired")
 	}
 
-	database.Exec(`UPDATE sessions SET last_seen_at = ? WHERE id = ?`, time.Now(), sessionID)
+	// last_seen is only shown for kiosks. Writing it on every dashboard
+	// request serialized SQLite and, with busy_timeout=10s, made page
+	// switches wait on the lock.
+	if sessionType == "kiosk" && (!lastSeen.Valid || time.Since(lastSeen.Time) >= 30*time.Second) {
+		database.Exec(`UPDATE sessions SET last_seen_at = ? WHERE id = ?`, time.Now(), sessionID)
+	}
 
 	var name, role, familyID, color, username string
 	err = database.QueryRow(

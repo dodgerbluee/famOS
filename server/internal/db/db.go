@@ -33,6 +33,9 @@ func New(path string) (*DB, error) {
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
+
 	return &DB{sqlDB}, nil
 }
 

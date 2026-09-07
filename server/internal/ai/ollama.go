@@ -7,34 +7,58 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
+const (
+	ollamaGenerateTimeout = 120 * time.Second
+	ollamaHealthTimeout   = 1500 * time.Millisecond
+	ollamaDialTimeout     = 800 * time.Millisecond
+	ollamaAvailCacheFor   = 30 * time.Second
+)
+
 type OllamaProvider struct {
-	baseURL   string
-	apiPrefix string
-	model     string
-	apiKey    string
-	client    *http.Client
+	baseURL      string
+	apiPrefix    string
+	model        string
+	apiKey       string
+	client       *http.Client
+	healthClient *http.Client
+
+	availMu  sync.Mutex
+	availOK  bool
+	availAt  time.Time
+	availErr error
+}
+
+func newOllamaHTTPClients() (generate, health *http.Client) {
+	dialer := &net.Dialer{Timeout: ollamaDialTimeout}
+	transport := &http.Transport{
+		DialContext:           dialer.DialContext,
+		ResponseHeaderTimeout: ollamaHealthTimeout,
+	}
+	return &http.Client{Timeout: ollamaGenerateTimeout},
+		&http.Client{Timeout: ollamaHealthTimeout, Transport: transport}
 }
 
 func NewOllamaProvider(baseURL, model string) *OllamaProvider {
+	generate, health := newOllamaHTTPClients()
 	return &OllamaProvider{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		model:   model,
-		client:  &http.Client{Timeout: 120 * time.Second},
+		baseURL:      strings.TrimRight(baseURL, "/"),
+		model:        model,
+		client:       generate,
+		healthClient: health,
 	}
 }
 
 func NewOllamaProviderWithKey(baseURL, model, apiKey string) *OllamaProvider {
-	return &OllamaProvider{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		model:   model,
-		apiKey:  apiKey,
-		client:  &http.Client{Timeout: 120 * time.Second},
-	}
+	p := NewOllamaProvider(baseURL, model)
+	p.apiKey = apiKey
+	return p
 }
 
 func (p *OllamaProvider) Name() string {
@@ -47,13 +71,13 @@ func (p *OllamaProvider) setAuth(req *http.Request) {
 	}
 }
 
-func (p *OllamaProvider) tryRequest(ctx context.Context, method, path string) (*http.Response, error) {
+func (p *OllamaProvider) tryRequest(ctx context.Context, client *http.Client, method, path string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, p.baseURL+path, nil)
 	if err != nil {
 		return nil, err
 	}
 	p.setAuth(req)
-	return p.client.Do(req)
+	return client.Do(req)
 }
 
 // detectPrefix tries Ollama API at multiple paths and returns the working prefix.
@@ -67,7 +91,9 @@ func (p *OllamaProvider) detectPrefix(ctx context.Context) (string, error) {
 	prefixes := []string{"/api", "/ollama/api"}
 	var lastErr string
 	for _, prefix := range prefixes {
-		resp, err := p.tryRequest(ctx, http.MethodGet, prefix+"/tags")
+		healthCtx, cancel := context.WithTimeout(ctx, ollamaHealthTimeout)
+		resp, err := p.tryRequest(healthCtx, p.healthClient, http.MethodGet, prefix+"/tags")
+		cancel()
 		if err != nil {
 			lastErr = err.Error()
 			continue
@@ -98,7 +124,20 @@ func (p *OllamaProvider) detectPrefix(ctx context.Context) (string, error) {
 }
 
 func (p *OllamaProvider) Available(ctx context.Context) bool {
+	p.availMu.Lock()
+	if !p.availAt.IsZero() && time.Since(p.availAt) < ollamaAvailCacheFor {
+		ok := p.availOK
+		p.availMu.Unlock()
+		return ok
+	}
+	p.availMu.Unlock()
+
 	_, err := p.detectPrefix(ctx)
+	p.availMu.Lock()
+	p.availAt = time.Now()
+	p.availOK = err == nil
+	p.availErr = err
+	p.availMu.Unlock()
 	return err == nil
 }
 
@@ -176,6 +215,10 @@ type ollamaResponse struct {
 }
 
 func (p *OllamaProvider) Complete(ctx context.Context, req CompletionRequest) (*CompletionResponse, error) {
+	if !p.Available(ctx) {
+		return nil, fmt.Errorf("ollama unavailable")
+	}
+
 	prefix, err := p.detectPrefix(ctx)
 	if err != nil {
 		return nil, err
