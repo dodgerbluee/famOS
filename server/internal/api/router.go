@@ -82,7 +82,7 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 	weatherHandler := NewWeatherHandler(svc.Weather)
 	aiHandler := NewAIHandler(svc.AI, svc.Weather, svc.Calendar, svc.Cash, loc)
 	camerasHandler := NewCamerasHandler(svc.Frigate, hub)
-	settingsHandler := &SettingsHandler{db: database, frigate: svc.Frigate, currency: svc.Currency}
+	settingsHandler := &SettingsHandler{db: database, frigate: svc.Frigate, currency: svc.Currency, vikunja: svc.Vikunja}
 	aiProvidersHandler := NewAIProvidersHandler(database, svc.AI, cfg)
 	gatusHandler := NewGatusHandler(service.NewGatusService(database))
 	seerrHandler := NewSeerrHandler(service.NewSeerrService(database))

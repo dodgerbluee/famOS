@@ -16,6 +16,7 @@ type SettingsHandler struct {
 	db       *db.DB
 	frigate  *frigate.Client
 	currency *service.CurrencyService
+	vikunja  *service.VikunjaService
 }
 
 func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -24,8 +25,6 @@ func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defer rows.Close()
-
 	settings := map[string]string{}
 	for rows.Next() {
 		var key, raw string
@@ -41,6 +40,7 @@ func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 		settings[key] = s
 	}
+	rows.Close()
 
 	var familyName string
 	h.db.QueryRow(`SELECT name FROM families LIMIT 1`).Scan(&familyName)
@@ -96,6 +96,14 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.reloadFrigate()
+	if h.vikunja != nil {
+		if _, ok := updates["vikunja_url"]; ok {
+			h.vikunja.InvalidateConfig()
+		}
+		if _, ok := updates["vikunja_api_key"]; ok {
+			h.vikunja.InvalidateConfig()
+		}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

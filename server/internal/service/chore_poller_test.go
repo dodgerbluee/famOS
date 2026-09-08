@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/sandershome/server/internal/db"
 )
@@ -90,5 +91,41 @@ func TestPoller_IgnoresTasksWithoutTemplateLabel(t *testing.T) {
 	database.QueryRow(`SELECT balance FROM sanders_cash_accounts WHERE member_id = 'kid1'`).Scan(&balance)
 	if balance != 0 {
 		t.Errorf("expected balance 0 for non-template task, got %d", balance)
+	}
+}
+
+type dbTouchingCompletedFetcher struct {
+	db    *db.DB
+	inner *mockCompletedTaskFetcher
+}
+
+func (m *dbTouchingCompletedFetcher) GetCompletedTasks(ctx context.Context, projectID int64) ([]CompletedTask, error) {
+	var n int
+	if err := m.db.QueryRow(`SELECT COUNT(*) FROM family_members`).Scan(&n); err != nil {
+		return nil, err
+	}
+	return m.inner.GetCompletedTasks(ctx, projectID)
+}
+
+func TestPoller_DoesNotDeadlockWhenFetcherReadsDB(t *testing.T) {
+	_, mock, database := setupPollerTest(t)
+	mock.tasksByProject[100] = []CompletedTask{
+		{ID: 10, Title: "Make your bed", DoneAt: "2026-08-08T10:00:00Z", ProjectID: 100, Labels: []string{"template:tmpl1"}},
+	}
+	cashSvc := NewSandersCashService(database)
+	svc := NewChorePollerService(database, &dbTouchingCompletedFetcher{db: database, inner: mock}, cashSvc)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- svc.Poll(context.Background())
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Poll returned error: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("deadlocked: poller fetched Vikunja while kid query was still open")
 	}
 }

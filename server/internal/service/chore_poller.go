@@ -31,7 +31,6 @@ func (s *ChorePollerService) Poll(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 
 	type kidProject struct {
 		memberID  string
@@ -41,9 +40,15 @@ func (s *ChorePollerService) Poll(ctx context.Context) error {
 	for rows.Next() {
 		var kp kidProject
 		if err := rows.Scan(&kp.memberID, &kp.projectID); err != nil {
+			rows.Close()
 			return err
 		}
 		kids = append(kids, kp)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
 	}
 
 	for _, kid := range kids {

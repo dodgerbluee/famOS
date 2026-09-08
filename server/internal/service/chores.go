@@ -57,24 +57,31 @@ func (s *ChoresService) ListChores() ([]ChoreWithStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
 	dateKey := todayKey()
 	var chores []ChoreWithStatus
 	for rows.Next() {
 		var c ChoreWithStatus
 		var assignedTo sql.NullString
 		if err := rows.Scan(&c.ID, &c.Title, &c.Icon, &assignedTo, &c.Recurrence, &c.RewardAmount, &c.Active, &c.CreatedAt, &c.AssignedName); err != nil {
+			rows.Close()
 			return nil, err
 		}
 		if assignedTo.Valid {
 			c.AssignedTo = &assignedTo.String
 		}
-		c.Completions, _ = s.getCompletions(c.ID, dateKey)
-		if c.Completions == nil {
-			c.Completions = []ChoreCompletion{}
-		}
 		chores = append(chores, c)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range chores {
+		chores[i].Completions, _ = s.getCompletions(chores[i].ID, dateKey)
+		if chores[i].Completions == nil {
+			chores[i].Completions = []ChoreCompletion{}
+		}
 	}
 	if chores == nil {
 		chores = []ChoreWithStatus{}

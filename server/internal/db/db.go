@@ -35,6 +35,8 @@ func New(path string) (*DB, error) {
 
 	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetMaxIdleConns(1)
+	// A Rows cursor holds that one connection until Close. Another Query/Exec
+	// in the same goroutine before Close waits forever.
 
 	return &DB{sqlDB}, nil
 }

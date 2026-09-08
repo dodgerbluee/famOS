@@ -354,15 +354,24 @@ func (s *ChoreTemplateService) RemoveMemberFromTemplates(memberID string) error 
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 
+	type tmplRow struct {
+		id          string
+		membersJSON string
+	}
+	var found []tmplRow
 	for rows.Next() {
-		var tmplID, membersJSON string
-		if rows.Scan(&tmplID, &membersJSON) != nil {
+		var row tmplRow
+		if rows.Scan(&row.id, &row.membersJSON) != nil {
 			continue
 		}
+		found = append(found, row)
+	}
+	rows.Close()
+
+	for _, row := range found {
 		var members []string
-		json.Unmarshal([]byte(membersJSON), &members)
+		json.Unmarshal([]byte(row.membersJSON), &members)
 		var updated []string
 		for _, m := range members {
 			if m != memberID {
@@ -370,11 +379,11 @@ func (s *ChoreTemplateService) RemoveMemberFromTemplates(memberID string) error 
 			}
 		}
 		if len(updated) == 0 {
-			s.db.Exec(`UPDATE chore_templates SET active = FALSE WHERE id = ?`, tmplID)
+			s.db.Exec(`UPDATE chore_templates SET active = FALSE WHERE id = ?`, row.id)
 		} else {
 			newJSON, _ := json.Marshal(updated)
 			isShared := len(updated) > 1
-			s.db.Exec(`UPDATE chore_templates SET assigned_members = ?, is_shared = ? WHERE id = ?`, string(newJSON), isShared, tmplID)
+			s.db.Exec(`UPDATE chore_templates SET assigned_members = ?, is_shared = ? WHERE id = ?`, string(newJSON), isShared, row.id)
 		}
 	}
 	return nil

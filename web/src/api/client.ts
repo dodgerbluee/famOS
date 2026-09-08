@@ -3,25 +3,37 @@ import { toJpegFile } from '../lib/toJpeg';
 const BASE_URL = import.meta.env.VITE_API_URL || '';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-    credentials: 'include',
-  });
+  const ctrl = new AbortController();
+  const timeout = window.setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers,
+      },
+      credentials: 'include',
+      signal: options?.signal ?? ctrl.signal,
+    });
 
-  if (!res.ok) {
-    if (res.status === 401 && !path.includes('/api/auth/') && !path.includes('/api/setup/') && !path.includes('/api/kiosks/')) {
-      window.location.href = '/login';
-      throw new Error('Session expired');
+    if (!res.ok) {
+      if (res.status === 401 && !path.includes('/api/auth/') && !path.includes('/api/setup/') && !path.includes('/api/kiosks/')) {
+        window.location.href = '/login';
+        throw new Error('Session expired');
+      }
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(body.error || res.statusText);
     }
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body.error || res.statusText);
-  }
 
-  return res.json();
+    return res.json();
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Request timed out');
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 export const api = {

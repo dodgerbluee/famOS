@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sandershome/server/internal/db"
@@ -16,13 +17,24 @@ import (
 type VikunjaService struct {
 	db     *db.DB
 	client *http.Client
+
+	mu        sync.RWMutex
+	cachedURL string
+	cachedKey string
 }
 
 func NewVikunjaService(database *db.DB) *VikunjaService {
 	return &VikunjaService{
 		db:     database,
-		client: &http.Client{Timeout: 15 * time.Second},
+		client: &http.Client{Timeout: 8 * time.Second},
 	}
+}
+
+func (s *VikunjaService) InvalidateConfig() {
+	s.mu.Lock()
+	s.cachedURL = ""
+	s.cachedKey = ""
+	s.mu.Unlock()
 }
 
 type VikunjaTask struct {
@@ -48,6 +60,20 @@ type VikunjaStatus struct {
 }
 
 func (s *VikunjaService) configOrErr() (string, string, error) {
+	s.mu.RLock()
+	if s.cachedURL != "" && s.cachedKey != "" {
+		url, key := s.cachedURL, s.cachedKey
+		s.mu.RUnlock()
+		return url, key, nil
+	}
+	s.mu.RUnlock()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cachedURL != "" && s.cachedKey != "" {
+		return s.cachedURL, s.cachedKey, nil
+	}
+
 	var rawURL, rawKey string
 	s.db.QueryRow(`SELECT value FROM app_settings WHERE key = 'vikunja_url'`).Scan(&rawURL)
 	s.db.QueryRow(`SELECT value FROM app_settings WHERE key = 'vikunja_api_key'`).Scan(&rawKey)
@@ -63,6 +89,7 @@ func (s *VikunjaService) configOrErr() (string, string, error) {
 	if key == "" {
 		return "", "", fmt.Errorf("Vikunja API key not configured")
 	}
+	s.cachedURL, s.cachedKey = url, key
 	return url, key, nil
 }
 
