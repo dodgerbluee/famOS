@@ -20,15 +20,11 @@ func NewTasksHandler(vikunja *service.VikunjaService, database *db.DB) *TasksHan
 }
 
 func (h *TasksHandler) ListMyTasks(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+	projectID, ok := h.projectForRequest(w, r, r.URL.Query().Get("memberId"))
+	if !ok {
 		return
 	}
-
-	var projectID int64
-	err := h.db.QueryRow(`SELECT vikunja_project_id FROM family_members WHERE id = ?`, user.MemberID).Scan(&projectID)
-	if err != nil || projectID == 0 {
+	if projectID == 0 {
 		writeJSON(w, http.StatusOK, []any{})
 		return
 	}
@@ -44,16 +40,35 @@ func (h *TasksHandler) ListMyTasks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tasks)
 }
 
-func (h *TasksHandler) Create(w http.ResponseWriter, r *http.Request) {
+func (h *TasksHandler) projectForRequest(w http.ResponseWriter, r *http.Request, memberID string) (int64, bool) {
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
 		writeError(w, http.StatusUnauthorized, "authentication required")
-		return
+		return 0, false
+	}
+	if memberID == "" {
+		memberID = user.MemberID
 	}
 
+	var projectID int64
+	var role string
+	err := h.db.QueryRow(`SELECT COALESCE(vikunja_project_id, 0), role FROM family_members WHERE id = ?`, memberID).Scan(&projectID, &role)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "family member not found")
+		return 0, false
+	}
+	if role == "kiosk" {
+		writeError(w, http.StatusBadRequest, "kiosks do not have tasks")
+		return 0, false
+	}
+	return projectID, true
+}
+
+func (h *TasksHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Title   string `json:"title"`
-		DueDate string `json:"dueDate"`
+		Title    string `json:"title"`
+		DueDate  string `json:"dueDate"`
+		MemberID string `json:"memberId"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -64,10 +79,12 @@ func (h *TasksHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var projectID int64
-	err := h.db.QueryRow(`SELECT vikunja_project_id FROM family_members WHERE id = ?`, user.MemberID).Scan(&projectID)
-	if err != nil || projectID == 0 {
-		writeError(w, http.StatusBadRequest, "no Vikunja project configured for your account")
+	projectID, ok := h.projectForRequest(w, r, req.MemberID)
+	if !ok {
+		return
+	}
+	if projectID == 0 {
+		writeError(w, http.StatusBadRequest, "no Vikunja project configured for this member")
 		return
 	}
 

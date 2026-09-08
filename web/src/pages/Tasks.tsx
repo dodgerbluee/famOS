@@ -1,24 +1,46 @@
 import { useEffect, useState, useCallback } from 'react';
-import { api, type VikunjaTaskSimple } from '../api/client';
+import { api, type FamilyMember, type VikunjaTaskSimple } from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 
 export function Tasks() {
+  const { user } = useAuth();
   const [tasks, setTasks] = useState<VikunjaTaskSimple[]>([]);
+  const [members, setMembers] = useState<FamilyMember[]>([]);
+  const [selectedMemberId, setSelectedMemberId] = useState(user?.memberId || '');
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(() => {
-    api.get<VikunjaTaskSimple[]>('/api/tasks').then(setTasks).catch(() => {});
+  const adults = members.filter((m) => m.role === 'admin' || m.role === 'parent');
+
+  useEffect(() => {
+    api.get<FamilyMember[]>('/api/family').then(setMembers).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!selectedMemberId && user?.memberId) {
+      setSelectedMemberId(user.memberId);
+    }
+  }, [selectedMemberId, user?.memberId]);
+
+  const load = useCallback(() => {
+    if (!selectedMemberId) return;
+    const q = `?memberId=${encodeURIComponent(selectedMemberId)}`;
+    api.get<VikunjaTaskSimple[]>(`/api/tasks${q}`).then(setTasks).catch(() => setTasks([]));
+  }, [selectedMemberId]);
 
   useEffect(() => { load(); }, [load]);
 
   const handleSubmit = async () => {
-    if (!title.trim()) return;
+    if (!title.trim() || !selectedMemberId) return;
     setSaving(true);
     try {
-      await api.post('/api/tasks', { title: title.trim(), dueDate: dueDate || undefined });
+      await api.post('/api/tasks', {
+        title: title.trim(),
+        dueDate: dueDate || undefined,
+        memberId: selectedMemberId,
+      });
       setTitle('');
       setDueDate('');
       setShowForm(false);
@@ -44,15 +66,39 @@ export function Tasks() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-text-bright">Tasks</h1>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-text-bright">Tasks</h1>
+          <p className="text-text-dim text-sm mt-0.5">Each adult has their own list. Kids' to-dos live on Chores.</p>
+        </div>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="bg-primary-light text-surface px-4 py-2 rounded-xl text-sm font-medium active:scale-95 transition-transform min-h-[44px]"
+          className="bg-primary-light text-surface px-4 py-2 rounded-xl text-sm font-medium active:scale-95 transition-transform min-h-[44px] shrink-0"
         >
           {showForm ? 'Cancel' : '+ Add Task'}
         </button>
       </div>
+
+      {adults.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          {adults.map((member) => (
+            <button
+              key={member.id}
+              onClick={() => setSelectedMemberId(member.id)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${
+                selectedMemberId === member.id ? '' : 'bg-surface-light text-text-dim'
+              }`}
+              style={selectedMemberId === member.id ? {
+                backgroundColor: member.color + '33',
+                color: member.color,
+                border: `1px solid ${member.color}`,
+              } : undefined}
+            >
+              {member.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {showForm && (
         <div className="bg-surface rounded-xl p-5 space-y-4">
