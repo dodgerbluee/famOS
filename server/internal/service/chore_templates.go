@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+
 	"github.com/google/uuid"
 	"github.com/sandershome/server/internal/db"
 )
@@ -40,6 +42,7 @@ type ChoreTemplate struct {
 	VikunjaLabel    string         `json:"vikunjaLabel"`
 	Active          bool           `json:"active"`
 	CreatedAt       string         `json:"createdAt"`
+	IsAdHoc         bool           `json:"isAdHoc,omitempty"`
 	Tasks           []TemplateTask `json:"tasks,omitempty"`
 }
 
@@ -189,16 +192,7 @@ func (s *ChoreTemplateService) ListTemplatesWithStatus(ctx context.Context) ([]C
 				continue
 			}
 
-			if _, ok := projectTasks[projectID]; !ok {
-				tasks, err := s.vikunja.GetTasksForProject(ctx, projectID)
-				if err != nil {
-					projectTasks[projectID] = []VikunjaTask{}
-				} else {
-					projectTasks[projectID] = tasks
-				}
-			}
-
-			for _, task := range projectTasks[projectID] {
+			for _, task := range s.loadProjectTasks(ctx, projectTasks, projectID) {
 				if taskHasLabel(task, tmpl.VikunjaLabel) {
 					tws.Tasks = append(tws.Tasks, MemberTaskStatus{
 						MemberID:      memberID,
@@ -212,15 +206,89 @@ func (s *ChoreTemplateService) ListTemplatesWithStatus(ctx context.Context) ([]C
 
 		result = append(result, tws)
 	}
+
+	adHoc, err := s.adHocKidTasks(ctx, projectTasks)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, adHoc...)
+
 	if result == nil {
 		result = []ChoreTemplateWithStatus{}
 	}
 	return result, nil
 }
 
+func (s *ChoreTemplateService) loadProjectTasks(ctx context.Context, cache map[int64][]VikunjaTask, projectID int64) []VikunjaTask {
+	if projectID == 0 {
+		return nil
+	}
+	if tasks, ok := cache[projectID]; ok {
+		return tasks
+	}
+	tasks, err := s.vikunja.GetTasksForProject(ctx, projectID)
+	if err != nil {
+		tasks = []VikunjaTask{}
+	}
+	cache[projectID] = tasks
+	return tasks
+}
+
+func (s *ChoreTemplateService) adHocKidTasks(ctx context.Context, projectTasks map[int64][]VikunjaTask) ([]ChoreTemplateWithStatus, error) {
+	rows, err := s.db.Query(`
+		SELECT id, COALESCE(vikunja_project_id, 0)
+		FROM family_members
+		WHERE role = 'kid'
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []ChoreTemplateWithStatus
+	for rows.Next() {
+		var memberID string
+		var projectID int64
+		if err := rows.Scan(&memberID, &projectID); err != nil {
+			return nil, err
+		}
+		for _, task := range s.loadProjectTasks(ctx, projectTasks, projectID) {
+			if taskHasTemplateLabel(task) {
+				continue
+			}
+			result = append(result, ChoreTemplateWithStatus{
+				ChoreTemplate: ChoreTemplate{
+					ID:              fmt.Sprintf("vikunja:%d", task.ID),
+					Title:           task.Title,
+					Icon:            "📋",
+					AssignedMembers: []string{memberID},
+					Active:          true,
+					CreatedAt:       task.CreatedAt,
+					IsAdHoc:         true,
+				},
+				Tasks: []MemberTaskStatus{{
+					MemberID:      memberID,
+					VikunjaTaskID: task.ID,
+					Done:          task.Done,
+				}},
+			})
+		}
+	}
+	return result, rows.Err()
+}
+
 func taskHasLabel(task VikunjaTask, label string) bool {
 	for _, l := range task.Labels {
 		if l == label {
+			return true
+		}
+	}
+	return false
+}
+
+func taskHasTemplateLabel(task VikunjaTask) bool {
+	for _, l := range task.Labels {
+		if strings.HasPrefix(l, "template:") {
 			return true
 		}
 	}

@@ -41,14 +41,18 @@ export function Chores() {
     kid,
     templates: templates.filter((t) => !t.isShared && t.assignedMembers.includes(kid.id)),
   }));
+  const visibleCount = sharedTemplates.length + templatesByKid.reduce((n, g) => n + g.templates.length, 0);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-text-bright">Chores</h1>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-text-bright">Chores</h1>
+          <p className="text-text-dim text-sm mt-0.5">Kid chores. Add them here, or in a kid's Vikunja list. Adult to-dos live on Tasks.</p>
+        </div>
         <button
           onClick={() => { setEditingId(null); setShowForm(!showForm); }}
-          className="bg-primary-light text-surface px-4 py-2 rounded-xl text-sm font-medium active:scale-95 transition-transform min-h-[44px]"
+          className="bg-primary-light text-surface px-4 py-2 rounded-xl text-sm font-medium active:scale-95 transition-transform min-h-[44px] shrink-0"
         >
           {showForm ? 'Cancel' : '+ Add Chore'}
         </button>
@@ -111,7 +115,11 @@ export function Chores() {
       ))}
 
       {templates.length === 0 && !showForm && (
-        <p className="text-text-dim text-center py-8">No chores yet. Tap "+ Add Chore" to get started.</p>
+        <p className="text-text-dim text-center py-8">No chores yet. Tap "+ Add Chore" to assign one to a kid.</p>
+      )}
+
+      {templates.length > 0 && visibleCount === 0 && !showForm && (
+        <p className="text-text-dim text-center py-8">Chores exist, but none are assigned to kids. Only kid-assigned chores show on this page.</p>
       )}
     </div>
   );
@@ -140,7 +148,9 @@ function ChoreRow({
         <div className="flex-1 min-w-0">
           <p className={`text-text-bright font-medium ${allDone ? 'line-through text-text-dim' : ''}`}>{template.title}</p>
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-text-dim text-[11px] capitalize">{template.recurrence}</span>
+            {template.recurrence && (
+              <span className="text-text-dim text-[11px] capitalize">{template.recurrence}</span>
+            )}
             {template.rewardAmount > 0 && (
               <span className="text-accent-green text-[11px]">+{(template.rewardAmount / 100).toFixed(2)} {currencyName}</span>
             )}
@@ -176,15 +186,17 @@ function ChoreRow({
           })}
         </div>
 
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="text-text-dim hover:text-text-bright text-sm px-1 min-h-[44px] flex items-center"
-        >
-          ⋯
-        </button>
+        {!template.isAdHoc && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="text-text-dim hover:text-text-bright text-sm px-1 min-h-[44px] flex items-center"
+          >
+            ⋯
+          </button>
+        )}
       </div>
 
-      {expanded && (
+      {expanded && !template.isAdHoc && (
         <div className="flex items-center gap-3 mt-3 pt-3 border-t border-surface-lighter">
           <button onClick={onEdit} className="text-primary-light text-xs font-medium min-h-[44px] flex items-center">Edit</button>
           <button onClick={onDelete} className="text-accent-red text-xs font-medium min-h-[44px] flex items-center">Delete</button>
@@ -213,6 +225,7 @@ function ChoreForm({
   const [recurrence, setRecurrence] = useState(editingTemplate?.recurrence || 'daily');
   const [rewardAmount, setRewardAmount] = useState(editingTemplate?.rewardAmount || 0);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   const toggleMember = (id: string) => {
     setAssignedMembers((prev) =>
@@ -239,8 +252,9 @@ function ChoreForm({
         await api.post('/api/chore-templates', body);
       }
       onSave();
-    } catch {
+    } catch (err) {
       setSaving(false);
+      setError(err instanceof Error ? err.message : 'Could not save chore');
     }
   };
 
@@ -330,6 +344,8 @@ function ChoreForm({
           </div>
         </div>
       </div>
+
+      {error && <p className="text-accent-red text-sm">{error}</p>}
 
       <div className="flex items-center gap-3 pt-2">
         <button

@@ -317,6 +317,7 @@ export interface ChoreTemplate {
   vikunjaLabel: string;
   active: boolean;
   createdAt: string;
+  isAdHoc?: boolean;
   tasks?: { memberId: string; vikunjaTaskId: number; done: boolean }[];
 }
 

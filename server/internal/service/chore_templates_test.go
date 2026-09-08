@@ -11,6 +11,7 @@ import (
 type mockVikunjaClient struct {
 	createdTasks []CreateTaskParams
 	nextTaskID   int64
+	projectTasks map[int64][]VikunjaTask
 }
 
 func (m *mockVikunjaClient) CreateTask(ctx context.Context, params CreateTaskParams) (int64, error) {
@@ -24,7 +25,10 @@ func (m *mockVikunjaClient) DeleteTask(ctx context.Context, taskID int64) error 
 }
 
 func (m *mockVikunjaClient) GetTasksForProject(ctx context.Context, projectID int64) ([]VikunjaTask, error) {
-	return []VikunjaTask{}, nil
+	if m.projectTasks == nil {
+		return []VikunjaTask{}, nil
+	}
+	return m.projectTasks[projectID], nil
 }
 
 func setupTemplateTest(t *testing.T) (*ChoreTemplateService, *mockVikunjaClient, *db.DB) {
@@ -138,5 +142,40 @@ func TestCreateTemplate_SharedChore(t *testing.T) {
 	}
 	if !projectIDs[100] || !projectIDs[200] {
 		t.Errorf("expected tasks in projects 100 and 200, got %v", projectIDs)
+	}
+}
+
+func TestListTemplatesWithStatus_IncludesAdHocKidTasks(t *testing.T) {
+	svc, mock, _ := setupTemplateTest(t)
+	mock.projectTasks = map[int64][]VikunjaTask{
+		100: {
+			{ID: 55, Title: "Clean your room", ProjectID: 100},
+			{ID: 56, Title: "From a template", ProjectID: 100, Labels: []string{"template:abc"}},
+		},
+		200: {},
+	}
+
+	listed, err := svc.ListTemplatesWithStatus(context.Background())
+	if err != nil {
+		t.Fatalf("ListTemplatesWithStatus returned error: %v", err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("expected 1 ad-hoc chore, got %d", len(listed))
+	}
+	got := listed[0]
+	if !got.IsAdHoc {
+		t.Error("expected isAdHoc true")
+	}
+	if got.Title != "Clean your room" {
+		t.Errorf("expected title 'Clean your room', got %s", got.Title)
+	}
+	if got.ID != "vikunja:55" {
+		t.Errorf("expected id vikunja:55, got %s", got.ID)
+	}
+	if len(got.AssignedMembers) != 1 || got.AssignedMembers[0] != "kid1" {
+		t.Errorf("expected assigned to kid1, got %v", got.AssignedMembers)
+	}
+	if len(got.Tasks) != 1 || got.Tasks[0].VikunjaTaskID != 55 {
+		t.Errorf("expected task 55 on the chore, got %+v", got.Tasks)
 	}
 }
