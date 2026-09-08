@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/sandershome/server/internal/db"
 )
@@ -177,5 +178,49 @@ func TestListTemplatesWithStatus_IncludesAdHocKidTasks(t *testing.T) {
 	}
 	if len(got.Tasks) != 1 || got.Tasks[0].VikunjaTaskID != 55 {
 		t.Errorf("expected task 55 on the chore, got %+v", got.Tasks)
+	}
+}
+
+type dbTouchingVikunja struct {
+	db    *db.DB
+	inner *mockVikunjaClient
+}
+
+func (m *dbTouchingVikunja) CreateTask(ctx context.Context, params CreateTaskParams) (int64, error) {
+	return m.inner.CreateTask(ctx, params)
+}
+
+func (m *dbTouchingVikunja) DeleteTask(ctx context.Context, taskID int64) error {
+	return m.inner.DeleteTask(ctx, taskID)
+}
+
+func (m *dbTouchingVikunja) GetTasksForProject(ctx context.Context, projectID int64) ([]VikunjaTask, error) {
+	var n int
+	if err := m.db.QueryRow(`SELECT COUNT(*) FROM family_members`).Scan(&n); err != nil {
+		return nil, err
+	}
+	return m.inner.GetTasksForProject(ctx, projectID)
+}
+
+func TestListTemplatesWithStatus_DoesNotDeadlockWhenVikunjaReadsDB(t *testing.T) {
+	_, mock, database := setupTemplateTest(t)
+	mock.projectTasks = map[int64][]VikunjaTask{
+		100: {{ID: 55, Title: "Clean your room", ProjectID: 100}},
+	}
+	svc := NewChoreTemplateService(database, &dbTouchingVikunja{db: database, inner: mock})
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := svc.ListTemplatesWithStatus(context.Background())
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("ListTemplatesWithStatus returned error: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("deadlocked: Vikunja DB read while kid query was still open")
 	}
 }

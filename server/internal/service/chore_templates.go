@@ -243,16 +243,29 @@ func (s *ChoreTemplateService) adHocKidTasks(ctx context.Context, projectTasks m
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var result []ChoreTemplateWithStatus
+	type kidProject struct {
+		memberID  string
+		projectID int64
+	}
+	var kids []kidProject
 	for rows.Next() {
-		var memberID string
-		var projectID int64
-		if err := rows.Scan(&memberID, &projectID); err != nil {
+		var kp kidProject
+		if err := rows.Scan(&kp.memberID, &kp.projectID); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		for _, task := range s.loadProjectTasks(ctx, projectTasks, projectID) {
+		kids = append(kids, kp)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []ChoreTemplateWithStatus
+	for _, kid := range kids {
+		for _, task := range s.loadProjectTasks(ctx, projectTasks, kid.projectID) {
 			if taskHasTemplateLabel(task) {
 				continue
 			}
@@ -261,20 +274,20 @@ func (s *ChoreTemplateService) adHocKidTasks(ctx context.Context, projectTasks m
 					ID:              fmt.Sprintf("vikunja:%d", task.ID),
 					Title:           task.Title,
 					Icon:            "📋",
-					AssignedMembers: []string{memberID},
+					AssignedMembers: []string{kid.memberID},
 					Active:          true,
 					CreatedAt:       task.CreatedAt,
 					IsAdHoc:         true,
 				},
 				Tasks: []MemberTaskStatus{{
-					MemberID:      memberID,
+					MemberID:      kid.memberID,
 					VikunjaTaskID: task.ID,
 					Done:          task.Done,
 				}},
 			})
 		}
 	}
-	return result, rows.Err()
+	return result, nil
 }
 
 func taskHasLabel(task VikunjaTask, label string) bool {
