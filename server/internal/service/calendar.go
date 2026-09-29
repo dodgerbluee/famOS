@@ -14,14 +14,19 @@ import (
 )
 
 type CalendarService struct {
-	db     *db.DB
-	client *caldav.CalDAVClient
+	db       *db.DB
+	client   *caldav.CalDAVClient
+	location *time.Location
 }
 
 func NewCalendarService(database *db.DB, location *time.Location) *CalendarService {
+	if location == nil {
+		location = time.UTC
+	}
 	return &CalendarService{
-		db:     database,
-		client: caldav.NewCalDAVClient(location),
+		db:       database,
+		client:   caldav.NewCalDAVClient(location),
+		location: location,
 	}
 }
 
@@ -200,33 +205,48 @@ func getSourcePassword(database *db.DB, sourceID string) string {
 }
 
 func (s *CalendarService) GetEvents(start, end time.Time) ([]CalendarEvent, error) {
+	if end.Before(start) {
+		start, end = end, start
+	}
+
 	rows, err := s.db.Query(`
 		SELECT e.id, e.source_id, e.external_id, e.title, e.description, e.location,
 		       e.start_at, e.end_at, e.all_day, e.recurrence_rule, e.ai_enrichment,
 		       cs.color, cs.name,
 		       COALESCE(NULLIF(e.calendar_name, ''), cs.calendar_name),
-		       COALESCE(NULLIF(e.calendar_color, ''), cs.color)
+		       COALESCE(NULLIF(e.calendar_color, ''), cs.color),
+		       COALESCE(e.recurrence_id, ''), COALESCE(e.exception_dates, ''),
+		       COALESCE(e.recurrence_dates, ''), COALESCE(e.status, '')
 		FROM calendar_events e
 		JOIN calendar_sources cs ON cs.id = e.source_id
-		WHERE e.start_at <= ? AND e.end_at >= ?
 		ORDER BY e.start_at
-	`, end.Format(time.RFC3339), start.Format(time.RFC3339))
+	`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var events []CalendarEvent
+	var stored []storedCalendarEvent
 	for rows.Next() {
-		var ev CalendarEvent
+		var ev storedCalendarEvent
+		var recID, exDates, rDates, status string
 		if err := rows.Scan(&ev.ID, &ev.SourceID, &ev.ExternalID, &ev.Title, &ev.Description,
 			&ev.Location, &ev.StartAt, &ev.EndAt, &ev.AllDay, &ev.RecurrenceRule,
-			&ev.AIEnrichment, &ev.SourceColor, &ev.SourceName, &ev.SourceCalendarName, &ev.SourceCalendarColor); err != nil {
+			&ev.AIEnrichment, &ev.SourceColor, &ev.SourceName, &ev.SourceCalendarName, &ev.SourceCalendarColor,
+			&recID, &exDates, &rDates, &status); err != nil {
 			return nil, err
 		}
-		events = append(events, ev)
+		ev.UID = masterUID(ev.ExternalID)
+		ev.RecurrenceID = parseStoredTime(recID, s.location)
+		ev.ExceptionDates = decodeTimes(exDates, s.location)
+		ev.RecurrenceDates = decodeTimes(rDates, s.location)
+		ev.Status = status
+		stored = append(stored, ev)
 	}
-	return events, nil
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return s.expandStoredEvents(stored, start, end), nil
 }
 
 func (s *CalendarService) SyncSource(ctx context.Context, sourceID string) (int, error) {
@@ -277,19 +297,30 @@ func (s *CalendarService) SyncSource(ctx context.Context, sourceID string) (int,
 }
 
 func (s *CalendarService) upsertEvent(sourceID string, ev caldav.ParsedEvent) error {
+	externalID := caldav.EventExternalID(ev)
 	var existingID string
 	err := s.db.QueryRow(`SELECT id FROM calendar_events WHERE source_id = ? AND external_id = ?`,
-		sourceID, ev.UID).Scan(&existingID)
+		sourceID, externalID).Scan(&existingID)
+
+	endAt := ev.EndAt
+	if endAt.IsZero() {
+		if ev.AllDay {
+			endAt = ev.StartAt.Add(24 * time.Hour)
+		} else {
+			endAt = ev.StartAt.Add(time.Hour)
+		}
+	}
 
 	if err == sql.ErrNoRows {
 		id := uuid.New().String()
 		_, err = s.db.Exec(`
 			INSERT INTO calendar_events (id, source_id, external_id, calendar_name, calendar_color, title, description, location,
-				start_at, end_at, all_day, recurrence_rule, synced_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-		`, id, sourceID, ev.UID, ev.CalendarName, ev.CalendarColor, ev.Summary, ev.Description, ev.Location,
-			ev.StartAt.Format(time.RFC3339), ev.EndAt.Format(time.RFC3339),
-			ev.AllDay, ev.RecurrenceRule)
+				start_at, end_at, all_day, recurrence_rule, recurrence_id, exception_dates, recurrence_dates, status, synced_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		`, id, sourceID, externalID, ev.CalendarName, ev.CalendarColor, ev.Summary, ev.Description, ev.Location,
+			ev.StartAt.Format(time.RFC3339), endAt.Format(time.RFC3339),
+			ev.AllDay, ev.RecurrenceRule, encodeRecurrenceID(ev.RecurrenceID),
+			encodeTimes(ev.ExceptionDates), encodeTimes(ev.RecurrenceDates), ev.Status)
 		return err
 	}
 	if err != nil {
@@ -298,11 +329,13 @@ func (s *CalendarService) upsertEvent(sourceID string, ev caldav.ParsedEvent) er
 
 	_, err = s.db.Exec(`
 		UPDATE calendar_events SET calendar_name = ?, calendar_color = ?, title = ?, description = ?, location = ?,
-			start_at = ?, end_at = ?, all_day = ?, recurrence_rule = ?, synced_at = CURRENT_TIMESTAMP
+			start_at = ?, end_at = ?, all_day = ?, recurrence_rule = ?, recurrence_id = ?, exception_dates = ?,
+			recurrence_dates = ?, status = ?, synced_at = CURRENT_TIMESTAMP
 		WHERE id = ?
 	`, ev.CalendarName, ev.CalendarColor, ev.Summary, ev.Description, ev.Location,
-		ev.StartAt.Format(time.RFC3339), ev.EndAt.Format(time.RFC3339),
-		ev.AllDay, ev.RecurrenceRule, existingID)
+		ev.StartAt.Format(time.RFC3339), endAt.Format(time.RFC3339),
+		ev.AllDay, ev.RecurrenceRule, encodeRecurrenceID(ev.RecurrenceID),
+		encodeTimes(ev.ExceptionDates), encodeTimes(ev.RecurrenceDates), ev.Status, existingID)
 	return err
 }
 
