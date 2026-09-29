@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState } from 'react';
 import { api, type DailyBriefing as BriefingType } from '../../api/client';
+import { useQuery } from '../../lib/query';
 
 interface DailyBriefingCardProps {
   compact?: boolean;
@@ -12,37 +12,30 @@ interface AIStatus {
 }
 
 export function DailyBriefingCard({ compact }: DailyBriefingCardProps) {
-  const [briefing, setBriefing] = useState<BriefingType | null>(null);
-  const [status, setStatus] = useState<AIStatus | null>(null);
+  const { data: briefing, refetch } = useQuery<BriefingType>(
+    '/api/ai/briefing',
+    () => api.get<BriefingType>('/api/ai/briefing'),
+    { staleTime: 60_000 },
+  );
+  const { data: status } = useQuery<AIStatus>(
+    '/api/ai/status',
+    () => api.get<AIStatus>('/api/ai/status'),
+    { staleTime: 60_000 },
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    api.get<AIStatus>('/api/ai/status').then(setStatus).catch(() => {});
-    api.get<BriefingType>('/api/ai/briefing')
-      .then(setBriefing)
-      .catch(() => {});
-  }, []);
-
   const generateBriefing = async () => {
-    await fetchBriefing(true);
-  };
-
-  const fetchBriefing = async (refresh: boolean) => {
     setLoading(true);
     setError(null);
     try {
-      const data = refresh
-        ? await api.post<BriefingType>('/api/ai/briefing', {})
-        : await api.get<BriefingType>('/api/ai/briefing');
-      setBriefing(data);
+      const data = await api.post<BriefingType>('/api/ai/briefing', {});
+      const { setQueryData } = await import('../../lib/query');
+      setQueryData('/api/ai/briefing', data);
+      refetch();
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Failed to load briefing';
-      if (refresh && message === 'Method Not Allowed') {
-        setError('AI briefing generation needs a backend restart to enable the new endpoint.');
-      } else {
-        setError(message);
-      }
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -99,11 +92,7 @@ export function DailyBriefingCard({ compact }: DailyBriefingCardProps) {
       </div>
 
       {briefing ? (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-3"
-        >
+        <div className="space-y-3 animate-[fadein_180ms_ease]">
           <p className="text-text-bright">{briefing.summary}</p>
 
           {briefing.highlights && briefing.highlights.length > 0 && (
@@ -126,7 +115,7 @@ export function DailyBriefingCard({ compact }: DailyBriefingCardProps) {
           {briefing.sandersCashSummary && (
             <p className="text-accent-green text-sm">💰 {briefing.sandersCashSummary}</p>
           )}
-        </motion.div>
+        </div>
       ) : (
         <div className="text-center py-4">
           {error && <p className="text-accent-red text-sm mb-2">{error}</p>}

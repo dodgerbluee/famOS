@@ -14,12 +14,14 @@ import (
 type GatusService struct {
 	db     *db.DB
 	client *http.Client
+	cache  *TTLCache[*GatusStatus]
 }
 
 func NewGatusService(database *db.DB) *GatusService {
 	return &GatusService{
 		db:     database,
 		client: &http.Client{Timeout: 10 * time.Second},
+		cache:  NewTTLCache[*GatusStatus](20 * time.Second),
 	}
 }
 
@@ -62,6 +64,10 @@ func (s *GatusService) getURL() (string, error) {
 }
 
 func (s *GatusService) GetStatus(ctx context.Context) (*GatusStatus, error) {
+	if cached, ok := s.cache.Get(); ok {
+		return cached, nil
+	}
+
 	baseURL, err := s.getURL()
 	if err != nil {
 		return nil, err
@@ -110,6 +116,7 @@ func (s *GatusService) GetStatus(ctx context.Context) (*GatusStatus, error) {
 		}
 	}
 
+	s.cache.Set(status)
 	return status, nil
 }
 

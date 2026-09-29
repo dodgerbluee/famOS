@@ -116,11 +116,27 @@ Keep each field under 100 characters. Be practical and helpful.`, title, startAt
 	return &result, nil
 }
 
-func (e *Engine) GenerateDailyBriefing(ctx context.Context, eventsJSON, weatherJSON, cashJSON string, refresh bool) (*DailyBriefing, error) {
+func (e *Engine) briefingCacheKey() string {
 	now := time.Now().In(e.location)
 	today := now.Format("2006-01-02")
-	partOfDay := currentPartOfDay(now)
-	cacheKey := "briefing:" + today + ":" + partOfDay
+	return "briefing:" + today + ":" + currentPartOfDay(now)
+}
+
+// CachedBriefing returns the stored briefing without calling Ollama.
+func (e *Engine) CachedBriefing() *DailyBriefing {
+	cached := e.getCache(e.briefingCacheKey())
+	if cached == "" {
+		return nil
+	}
+	var result DailyBriefing
+	if json.Unmarshal([]byte(cached), &result) != nil {
+		return nil
+	}
+	return &result
+}
+
+func (e *Engine) GenerateDailyBriefing(ctx context.Context, eventsJSON, weatherJSON, cashJSON string, refresh bool) (*DailyBriefing, error) {
+	cacheKey := e.briefingCacheKey()
 
 	if !refresh {
 		if cached := e.getCache(cacheKey); cached != "" {
@@ -140,6 +156,10 @@ func (e *Engine) GenerateDailyBriefing(ctx context.Context, eventsJSON, weatherJ
 		SandersCashNote    string   `json:"sandersCashNote"`
 		SandersCashSummary string   `json:"sandersCashSummary"`
 	}
+
+	now := time.Now().In(e.location)
+	today := now.Format("2006-01-02")
+	partOfDay := currentPartOfDay(now)
 
 	prompt := fmt.Sprintf(`Create a family daily briefing for today.
 

@@ -43,7 +43,8 @@ func (h *CamerasHandler) ListCameras(w http.ResponseWriter, r *http.Request) {
 
 func (h *CamerasHandler) GetSnapshot(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	data, contentType, err := h.client.GetSnapshot(r.Context(), name)
+	height, _ := strconv.Atoi(r.URL.Query().Get("h"))
+	data, contentType, err := h.client.GetSnapshot(r.Context(), name, height)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "snapshot error: "+err.Error())
 		return

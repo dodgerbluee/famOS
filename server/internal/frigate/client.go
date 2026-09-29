@@ -190,9 +190,12 @@ func (c *Client) ListCameras(ctx context.Context) ([]Camera, error) {
 	return cameras, nil
 }
 
-func (c *Client) GetSnapshot(ctx context.Context, cameraName string) ([]byte, string, error) {
+func (c *Client) GetSnapshot(ctx context.Context, cameraName string, height int) ([]byte, string, error) {
 	base, _, _ := c.config()
-	url := fmt.Sprintf("%s/api/%s/latest.jpg?h=720", base, cameraName)
+	if height <= 0 {
+		height = 720
+	}
+	url := fmt.Sprintf("%s/api/%s/latest.jpg?h=%d", base, cameraName, height)
 	resp, err := c.doRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, "", fmt.Errorf("snapshot request failed: %w", err)

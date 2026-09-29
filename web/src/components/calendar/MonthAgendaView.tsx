@@ -1,7 +1,7 @@
 import { EventCard } from './EventCard';
 import type { CalendarEvent } from '../../api/client';
 import { eventSpansDate, getCalendarEventDateKey, getEventVisualState, isMultiDayEvent } from '../../lib/calendar';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { formatDate, fromDateKey, getDateKey, getDateParts, useTimezone } from '../../lib/timezone';
 
 interface MonthAgendaViewProps {
@@ -21,29 +21,40 @@ export function MonthAgendaView({ date, events, onDaySelect, onEventSelect, refe
   const lastDay = new Date(Date.UTC(year, month, 0, 12));
   const today = getDateKey(new Date(), timezone);
 
-  const days = Array.from({ length: lastDay.getUTCDate() }, (_, index) => fromDateKey(`${year}-${String(month).padStart(2, '0')}-${String(index + 1).padStart(2, '0')}`, timezone));
+  const days = useMemo(
+    () => Array.from({ length: lastDay.getUTCDate() }, (_, index) => fromDateKey(`${year}-${String(month).padStart(2, '0')}-${String(index + 1).padStart(2, '0')}`, timezone)),
+    [lastDay, year, month, timezone],
+  );
   const dayKeys = days.map((d) => getDateKey(d, timezone));
+  const firstDayKey = dayKeys[0];
 
-  const eventsByDay = (day: Date) => {
-    const dayStr = getDateKey(day, timezone);
-    return events.filter((ev) => {
-      if (!eventSpansDate(ev, dayStr, timezone)) return false;
-      if (isMultiDayEvent(ev, timezone)) {
-        const evStartKey = getCalendarEventDateKey(ev, timezone);
-        if (evStartKey === dayStr) return true;
-        if (evStartKey < dayKeys[0]) return dayStr === dayKeys[0];
-        return false;
-      }
-      return true;
-    });
-  };
+  const eventsByDayMap = useMemo(() => {
+    const map = new Map<string, CalendarEvent[]>();
+    for (const day of days) {
+      const dayStr = getDateKey(day, timezone);
+      map.set(dayStr, events.filter((ev) => {
+        if (!eventSpansDate(ev, dayStr, timezone)) return false;
+        if (isMultiDayEvent(ev, timezone)) {
+          const evStartKey = getCalendarEventDateKey(ev, timezone);
+          if (evStartKey === dayStr) return true;
+          if (firstDayKey && evStartKey < firstDayKey) return dayStr === firstDayKey;
+          return false;
+        }
+        return true;
+      }));
+    }
+    return map;
+  }, [days, events, timezone, firstDayKey]);
 
-  const visibleDays = days.filter((day) => eventsByDay(day).length > 0);
+  const visibleDays = useMemo(
+    () => days.filter((day) => (eventsByDayMap.get(getDateKey(day, timezone)) ?? []).length > 0),
+    [days, eventsByDayMap, timezone],
+  );
 
   useEffect(() => {
     if (!autoScrollRelevant || !referenceTime || !containerRef.current) return;
     const targetIndex = visibleDays.findIndex((day) => {
-      const dayEvents = eventsByDay(day);
+      const dayEvents = eventsByDayMap.get(getDateKey(day, timezone)) ?? [];
       return dayEvents.some((event) => getEventVisualState(event, referenceTime) !== 'muted');
     });
     const index = targetIndex >= 0 ? targetIndex : 0;
@@ -53,12 +64,12 @@ export function MonthAgendaView({ date, events, onDaySelect, onEventSelect, refe
       const targetTop = target.getBoundingClientRect().top;
       containerRef.current.scrollTop += targetTop - containerTop;
     }
-  }, [autoScrollRelevant, referenceTime, visibleDays]);
+  }, [autoScrollRelevant, referenceTime, visibleDays, eventsByDayMap, timezone]);
 
   return (
     <div ref={containerRef} className="space-y-2 overflow-y-auto flex-1 min-h-0 pr-1">
-      {visibleDays.map((day, index) => {
-        const dayEvents = eventsByDay(day);
+            {visibleDays.map((day, index) => {
+        const dayEvents = eventsByDayMap.get(getDateKey(day, timezone)) ?? [];
         const isToday = getDateKey(day, timezone) === today;
 
         return (

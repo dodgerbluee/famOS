@@ -2,6 +2,12 @@ import { toJpegFile } from '../lib/toJpeg';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '';
 
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const ctrl = new AbortController();
   const timeout = window.setTimeout(() => ctrl.abort(), 10000);
@@ -18,7 +24,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
     if (!res.ok) {
       if (res.status === 401 && !path.includes('/api/auth/') && !path.includes('/api/setup/') && !path.includes('/api/kiosks/')) {
-        window.location.href = '/login';
+        unauthorizedHandler?.();
         throw new Error('Session expired');
       }
       const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -176,13 +182,13 @@ export interface CalendarEvent {
   sourceId: string;
   externalId: string;
   title: string;
-  description: string;
+  description?: string;
   location: string;
   startAt: string;
   endAt: string;
   allDay: boolean;
-  recurrenceRule: string;
-  aiEnrichment: string;
+  recurrenceRule?: string;
+  aiEnrichment?: string;
   sourceColor: string;
   sourceName: string;
   sourceCalendarName: string;
@@ -333,10 +339,13 @@ export interface ChoreTemplate {
 export interface VikunjaTaskSimple {
   id: number;
   title: string;
+  description?: string;
   done: boolean;
-  dueDate: string;
+  dueDate?: string;
+  createdAt?: string;
   priority: number;
   projectId: number;
+  projectName?: string;
 }
 
 export interface OAuthPublicProvider {
@@ -362,4 +371,49 @@ export interface OAuthProviderConfig {
   createdAt: string;
   updatedAt: string;
   hasClientSecret: boolean;
+}
+
+export interface GatusStatus {
+  total: number;
+  healthy: number;
+  unstable: number;
+  failing: number;
+  services: { name: string; group: string; status: 'healthy' | 'unstable' | 'failing' }[];
+}
+
+export interface SeerrStatus {
+  pending: number;
+  approved: number;
+  pendingItems: { title: string; mediaType: string; requestedBy: string }[];
+}
+
+export interface VikunjaStatus {
+  total: number;
+  overdue: number;
+  dueToday: number;
+  highPrio: number;
+  tasks: VikunjaTaskSimple[];
+}
+
+export interface DashboardPayload {
+  settings: Record<string, string>;
+  accounts: AccountWithMember[];
+  events: CalendarEvent[];
+  choreTemplates: ChoreTemplate[];
+  family: FamilyMember[];
+  weather: WeatherData | null;
+  briefing: DailyBriefing | null;
+  gatus: GatusStatus | null;
+  seerr: SeerrStatus | null;
+  vikunja: VikunjaStatus | null;
+  ai: { provider: string; available: boolean };
+  errors: Record<string, string>;
+}
+
+export function immichAssetUrl(id: string, size: 'preview' | 'thumbnail' = 'preview') {
+  return `/api/immich/assets/${id}?size=${size}`;
+}
+
+export function cameraSnapshotUrl(name: string, height = 360) {
+  return `/api/cameras/${name}/snapshot?h=${height}`;
 }

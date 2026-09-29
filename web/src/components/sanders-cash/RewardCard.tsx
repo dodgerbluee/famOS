@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import type { Reward } from '../../api/client';
 
 interface RewardCardProps {
@@ -11,9 +10,8 @@ export function RewardCard({ reward, balance, onRedeem }: RewardCardProps) {
   const canAfford = balance >= reward.cost;
 
   return (
-    <motion.div
-      whileTap={{ scale: 0.97 }}
-      className="bg-surface-light rounded-2xl p-4 flex flex-col"
+    <div
+      className="bg-surface-light rounded-2xl p-4 flex flex-col active:scale-[0.97] transition-transform"
     >
       <div className="flex-1">
         <div className="flex items-start justify-between mb-2">
@@ -47,6 +45,6 @@ export function RewardCard({ reward, balance, onRedeem }: RewardCardProps) {
           </span>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }

@@ -47,7 +47,7 @@ export function Setup() {
     <div className="min-h-screen bg-bg flex items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-text-bright">Welcome to SandersHome</h1>
+          <h1 className="text-3xl font-bold text-text-bright">Welcome to famOS</h1>
           <p className="text-text-dim mt-2">Create your family and your adult account</p>
         </div>
 

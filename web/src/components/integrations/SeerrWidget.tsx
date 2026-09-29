@@ -1,31 +1,16 @@
-import { useEffect, useState } from 'react';
-import { api } from '../../api/client';
-
-interface SeerrPendingItem {
-  title: string;
-  mediaType: string;
-  requestedBy: string;
-}
-
-interface SeerrStatus {
-  pending: number;
-  approved: number;
-  pendingItems: SeerrPendingItem[];
-}
+import { api, type SeerrStatus } from '../../api/client';
+import { useQuery } from '../../lib/query';
 
 interface SeerrWidgetProps {
   compact?: boolean;
 }
 
 export function SeerrWidget({ compact }: SeerrWidgetProps) {
-  const [status, setStatus] = useState<SeerrStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api.get<SeerrStatus>('/api/seerr/requests')
-      .then(setStatus)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
-  }, []);
+  const { data: status, error: queryError } = useQuery<SeerrStatus>(
+    '/api/seerr/requests',
+    () => api.get<SeerrStatus>('/api/seerr/requests'),
+  );
+  const error = queryError?.message ?? null;
 
   if (error) {
     return (

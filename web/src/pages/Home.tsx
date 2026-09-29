@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import type { ShellContext } from '../components/layout/Shell';
-import { api, type AccountWithMember, type CalendarEvent } from '../api/client';
+import { api, type AccountWithMember, type CalendarEvent, type DashboardPayload } from '../api/client';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { useQuery, setQueryData, setQueryError } from '../lib/query';
 import { Leaderboard } from '../components/sanders-cash/Leaderboard';
 import { DayView } from '../components/calendar/DayView';
 import { WeekView } from '../components/calendar/WeekView';
@@ -15,9 +16,11 @@ import { VikunjaWidget } from '../components/integrations/VikunjaWidget';
 import { ChoresWidget } from '../components/chores/ChoresWidget';
 import { DashboardGrid } from '../components/dashboard/DashboardGrid';
 import { GridCard } from '../components/dashboard/GridCard';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+import { CARD_ICONS } from '../components/layout/CardIcons';
 import {
   type DashboardLayout,
-  DEFAULT_GRID_LAYOUT, migrateLayout, findEmptySlot,
+  DEFAULT_GRID_LAYOUT, SIMPLE_KIOSK_LAYOUT, migrateLayout, findEmptySlot,
   CARD_MIN_SIZES,
 } from '../lib/gridLayout';
 import { eventSpansDate } from '../lib/calendar';
@@ -27,20 +30,19 @@ import { useIsMobile } from '../hooks/useIsMobile';
 interface CardDef {
   id: string;
   label: string;
-  icon: string;
 }
 
-  const CARD_DEFS: CardDef[] = [
-  { id: 'briefing', label: 'Briefing', icon: '✦' },
-  { id: 'day-calendar', label: 'Day', icon: '◫' },
-  { id: 'week-calendar', label: 'Week', icon: '◫' },
-  { id: 'month-calendar', label: 'Month', icon: '◫' },
-  { id: 'chores', label: 'Chores', icon: '✓' },
-  { id: 'tasks', label: 'Tasks', icon: '☐' },
-  { id: 'services', label: 'Services', icon: '◉' },
-  { id: 'media', label: 'Media', icon: '▶' },
-  { id: 'sanders-cash', label: 'Sanders Cash', icon: '◈' },
-  { id: 'weather', label: 'Weather', icon: '☀' },
+const CARD_DEFS: CardDef[] = [
+  { id: 'briefing', label: 'Briefing' },
+  { id: 'day-calendar', label: 'Day' },
+  { id: 'week-calendar', label: 'Week' },
+  { id: 'month-calendar', label: 'Month' },
+  { id: 'chores', label: 'Chores' },
+  { id: 'tasks', label: 'Tasks' },
+  { id: 'services', label: 'Services' },
+  { id: 'media', label: 'Media' },
+  { id: 'sanders-cash', label: 'Sanders Cash' },
+  { id: 'weather', label: 'Weather' },
 ];
 
 const MOBILE_CARD_ORDER = [
@@ -48,31 +50,72 @@ const MOBILE_CARD_ORDER = [
   'week-calendar', 'month-calendar', 'tasks', 'services', 'media',
 ];
 
+function seedDashboard(data: DashboardPayload) {
+  setQueryData('/api/settings', data.settings);
+  setQueryData('/api/sanders-cash/accounts', data.accounts);
+  setQueryData('/api/chore-templates', data.choreTemplates);
+  setQueryData('/api/family', data.family);
+  if (data.weather) setQueryData('/api/weather', data.weather);
+  if (data.briefing) setQueryData('/api/ai/briefing', data.briefing);
+  setQueryData('/api/ai/status', data.ai);
+  if (data.gatus) setQueryData('/api/gatus/status', data.gatus);
+  else if (data.errors.gatus) setQueryError('/api/gatus/status', new Error(data.errors.gatus));
+  if (data.seerr) setQueryData('/api/seerr/requests', data.seerr);
+  else if (data.errors.seerr) setQueryError('/api/seerr/requests', new Error(data.errors.seerr));
+  if (data.vikunja) setQueryData('/api/vikunja/tasks', data.vikunja);
+  else if (data.errors.vikunja) setQueryError('/api/vikunja/tasks', new Error(data.errors.vikunja));
+}
+
+function layoutFromSettings(settings?: Record<string, string>): DashboardLayout {
+  if (!settings?.home_layout) return DEFAULT_GRID_LAYOUT;
+  try {
+    const parsed = JSON.parse(settings.home_layout);
+    const migrated = migrateLayout(parsed);
+    if (migrated && migrated.cards.length > 0) {
+      const savedIds = new Set(migrated.cards.map((c) => c.id));
+      const missing = DEFAULT_GRID_LAYOUT.cards.filter((c) => !savedIds.has(c.id));
+      for (const m of missing) {
+        const slot = findEmptySlot(migrated.cards, m.colSpan, m.rowSpan);
+        migrated.cards.push({ ...m, col: slot.col, row: slot.row });
+      }
+      return migrated;
+    }
+  } catch { /* use default */ }
+  return DEFAULT_GRID_LAYOUT;
+}
+
 export function Home() {
+  const { data: dashboard } = useQuery<DashboardPayload>(
+    '/api/dashboard',
+    () => api.get<DashboardPayload>('/api/dashboard'),
+    { staleTime: 10_000 },
+  );
   const [accounts, setAccounts] = useState<AccountWithMember[]>([]);
   const [scheduleEvents, setScheduleEvents] = useState<CalendarEvent[]>([]);
-  const [now, setNow] = useState(new Date());
+  const [clock, setClock] = useState(new Date());
+  const [highlightNow, setHighlightNow] = useState(new Date());
   const [dayOffset, setDayOffset] = useState(0);
   const [weekOffset, setWeekOffset] = useState(0);
   const [monthOffset, setMonthOffset] = useState(0);
   const [layout, setLayout] = useState<DashboardLayout>(DEFAULT_GRID_LAYOUT);
   const { editing, setEditing } = useOutletContext<ShellContext>();
   const layoutSnapshotRef = useRef<DashboardLayout | null>(null);
-  const [serviceStatus, setServiceStatus] = useState<{ failing: number; unstable: number }>({ failing: 0, unstable: 0 });
-  const [mediaPending, setMediaPending] = useState(0);
   const gridRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const timezone = useTimezone();
 
-  const viewDay = addDaysInTimezone(now, dayOffset, timezone);
+  useEffect(() => {
+    if (!dashboard) return;
+    seedDashboard(dashboard);
+    setAccounts(dashboard.accounts ?? []);
+    setScheduleEvents(dashboard.events ?? []);
+    setLayout(layoutFromSettings(dashboard.settings));
+  }, [dashboard]);
 
-  const viewWeekStart = addDaysInTimezone(startOfWeekInTimezone(now, timezone), weekOffset * 7, timezone);
-  const viewMonth = addMonthsInTimezone(now, monthOffset, timezone);
-
-  const loadAccounts = useCallback(() => {
-    api.get<AccountWithMember[]>('/api/sanders-cash/accounts').then(setAccounts).catch(() => {});
-  }, []);
+  const viewDay = addDaysInTimezone(clock, dayOffset, timezone);
+  const viewWeekStart = addDaysInTimezone(startOfWeekInTimezone(clock, timezone), weekOffset * 7, timezone);
+  const viewMonth = addMonthsInTimezone(clock, monthOffset, timezone);
 
   const loadScheduleEvents = useCallback(() => {
     const current = new Date();
@@ -95,34 +138,17 @@ export function Home() {
   const dayEvents = scheduleEvents.filter((event) => eventSpansDate(event, getDateKey(viewDay, timezone), timezone));
 
   useEffect(() => {
-    loadAccounts();
-    loadScheduleEvents();
-    api.get<{ failing: number; unstable: number }>('/api/gatus/status')
-      .then((s) => setServiceStatus({ failing: s.failing, unstable: s.unstable }))
-      .catch(() => {});
-    api.get<{ pending: number }>('/api/seerr/requests')
-      .then((s) => setMediaPending(s.pending))
-      .catch(() => {});
-    api.get<Record<string, string>>('/api/settings').then((settings) => {
-      if (settings.home_layout) {
-        try {
-          const parsed = JSON.parse(settings.home_layout);
-          const migrated = migrateLayout(parsed);
-          if (migrated && migrated.cards.length > 0) {
-            const savedIds = new Set(migrated.cards.map((c) => c.id));
-            const missing = DEFAULT_GRID_LAYOUT.cards.filter((c) => !savedIds.has(c.id));
-            for (const m of missing) {
-              const slot = findEmptySlot(migrated.cards, m.colSpan, m.rowSpan);
-              migrated.cards.push({ ...m, col: slot.col, row: slot.row });
-            }
-            setLayout(migrated);
-          }
-        } catch { /* use default */ }
-      }
-    }).catch(() => {});
-    const timer = setInterval(() => setNow(new Date()), 60_000);
+    const timer = setInterval(() => {
+      const next = new Date();
+      setClock(next);
+      setHighlightNow((prev) => (next.getMinutes() !== prev.getMinutes() ? next : prev));
+    }, 1000);
     return () => clearInterval(timer);
-  }, [loadAccounts, loadScheduleEvents]);
+  }, []);
+
+  useEffect(() => {
+    if (monthOffset !== 0) loadScheduleEvents();
+  }, [loadScheduleEvents, monthOffset]);
 
   useEffect(() => {
     if (editing && !layoutSnapshotRef.current) {
@@ -202,6 +228,10 @@ export function Home() {
     saveLayout({ ...layout, mode: layout.mode === 'fill' ? 'scroll' : 'fill' });
   };
 
+  const applySimpleKiosk = () => {
+    saveLayout(JSON.parse(JSON.stringify(SIMPLE_KIOSK_LAYOUT)));
+  };
+
   const cancelEditing = () => {
     if (layoutSnapshotRef.current) {
       setLayout(layoutSnapshotRef.current);
@@ -209,6 +239,10 @@ export function Home() {
     }
     setEditing(false);
   };
+
+  const greeting = getGreeting(clock, timezone);
+  const serviceStatus = dashboard?.gatus ?? { failing: 0, unstable: 0 };
+  const mediaPending = dashboard?.seerr?.pending ?? 0;
 
   const renderCard = (cardId: string): ReactNode => {
     switch (cardId) {
@@ -218,11 +252,11 @@ export function Home() {
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-2">
               <h2 className="text-lg font-semibold text-text-bright">{greeting}</h2>
               <span className="text-text-bright text-sm font-semibold">
-                {formatDate(now, timezone, { weekday: 'short', month: 'short', day: 'numeric' })}
+                {formatDate(clock, timezone, { weekday: 'short', month: 'short', day: 'numeric' })}
               </span>
               <span className="text-primary-light text-lg font-bold">
-                {formatTime(now, timezone)}
-                <span className="text-xs text-text-dim font-medium ml-1">{formatDate(now, timezone, { timeZoneName: 'short' }).split(' ').pop()}</span>
+                {formatTime(clock, timezone, { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
+                <span className="text-xs text-text-dim font-medium ml-1">{formatDate(clock, timezone, { timeZoneName: 'short' }).split(' ').pop()}</span>
               </span>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto">
@@ -244,7 +278,7 @@ export function Home() {
               </div>
               <button onClick={() => navigate('/calendar')} className="text-primary-light text-sm font-medium shrink-0">View All →</button>
             </div>
-            <DayView date={viewDay} events={dayEvents} compact referenceTime={now} />
+            <DayView date={viewDay} events={dayEvents} compact referenceTime={highlightNow} />
           </>
         );
 
@@ -261,7 +295,7 @@ export function Home() {
               </div>
               <button onClick={() => navigate('/calendar')} className="text-primary-light text-sm font-medium shrink-0">View All →</button>
             </div>
-            <WeekView startDate={viewWeekStart} events={scheduleEvents} referenceTime={now} showHeader={false} autoScrollRelevant compact />
+            <WeekView startDate={viewWeekStart} events={scheduleEvents} referenceTime={highlightNow} showHeader={false} autoScrollRelevant compact />
           </>
         );
 
@@ -278,7 +312,7 @@ export function Home() {
               </div>
               <button onClick={() => navigate('/calendar')} className="text-primary-light text-sm font-medium shrink-0">View All →</button>
             </div>
-            <MonthAgendaView date={viewMonth} events={scheduleEvents} referenceTime={now} autoScrollRelevant={monthOffset === 0} />
+            <MonthAgendaView date={viewMonth} events={scheduleEvents} referenceTime={highlightNow} autoScrollRelevant={monthOffset === 0} />
           </div>
         );
 
@@ -317,7 +351,6 @@ export function Home() {
     }
   };
 
-  const greeting = getGreeting(now, timezone);
   const hiddenCards = CARD_DEFS.filter((d) => !layout.cards.some((c) => c.id === d.id));
 
   const cardPulse = (id: string): 'red' | 'peach' | 'pink' | undefined => {
@@ -330,10 +363,10 @@ export function Home() {
   };
 
   const mobileCards = MOBILE_CARD_ORDER.filter((id) => layout.cards.some((c) => c.id === id));
+  const showSkeleton = !dashboard;
 
   return (
     <div className="flex flex-col h-full -m-4">
-      {/* Edit banner — desktop only */}
       {!isMobile && editing && (
         <div className="mx-4 mb-2 bg-primary-light/10 border border-primary-light/20 rounded-xl px-4 py-2.5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-4">
@@ -350,6 +383,12 @@ export function Home() {
               }`}
             >
               Fit to page
+            </button>
+            <button
+              onClick={applySimpleKiosk}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium bg-surface-light text-text-dim hover:text-text-bright"
+            >
+              Simple kiosk
             </button>
           </div>
           <div className="flex items-center gap-3">
@@ -368,62 +407,70 @@ export function Home() {
           <div className="flex flex-col gap-4">
             {mobileCards.map((cardId) => (
               <div key={cardId} className="bg-surface-light rounded-2xl border border-surface-lighter p-3">
-                {renderCard(cardId)}
+                {showSkeleton ? <CardSkeleton /> : renderCard(cardId)}
               </div>
             ))}
           </div>
         </div>
       ) : (
-        <>
-          {/* Grid */}
-          <div className={`flex-1 px-4 pt-4 ${layout.mode === 'scroll' ? 'overflow-y-auto pb-4' : 'overflow-hidden'}`}>
-            <DashboardGrid layout={layout} editing={editing} containerRef={gridRef}>
-              {layout.cards.map((card) => {
-                const def = CARD_DEFS.find((d) => d.id === card.id);
-                if (!def) return null;
-                return (
-                  <GridCard
-                    key={card.id}
-                    card={card}
-                    label={def.label}
-                    editing={editing}
-                    allCards={layout.cards}
-                    containerRef={gridRef}
-                    gridMode={layout.mode}
-                    totalRows={layout.totalRows}
-                    pulseColor={cardPulse(card.id)}
-                    onMove={handleMove}
-                    onSwap={handleSwap}
-                    onResize={handleResize}
-                    onRemove={handleRemove}
-                  >
-                    {renderCard(card.id)}
-                  </GridCard>
-                );
-              })}
-            </DashboardGrid>
+        <div className={`flex-1 px-4 pt-4 ${layout.mode === 'scroll' ? 'overflow-y-auto pb-4' : 'overflow-hidden'}`}>
+          <DashboardGrid layout={layout} editing={editing} containerRef={gridRef}>
+            {layout.cards.map((card) => {
+              const def = CARD_DEFS.find((d) => d.id === card.id);
+              if (!def) return null;
+              return (
+                <GridCard
+                  key={card.id}
+                  card={card}
+                  label={def.label}
+                  editing={editing}
+                  allCards={layout.cards}
+                  containerRef={gridRef}
+                  gridMode={layout.mode}
+                  totalRows={layout.totalRows}
+                  pulseColor={cardPulse(card.id)}
+                  onMove={handleMove}
+                  onSwap={handleSwap}
+                  onResize={handleResize}
+                  onRemove={handleRemove}
+                >
+                  <ErrorBoundary>
+                    {showSkeleton ? <CardSkeleton /> : renderCard(card.id)}
+                  </ErrorBoundary>
+                </GridCard>
+              );
+            })}
+          </DashboardGrid>
 
-            {/* Add card */}
-            {editing && hiddenCards.length > 0 && (
-              <div className="bg-surface rounded-2xl p-4 mt-4">
-                <p className="text-text-dim text-xs font-medium uppercase tracking-wide mb-2">Add card</p>
-                <div className="flex flex-wrap gap-2">
-                  {hiddenCards.map((def) => (
-                    <button
-                      key={def.id}
-                      onClick={() => handleAdd(def.id)}
-                      className="flex items-center gap-1.5 bg-surface-light hover:bg-surface-lighter text-text-dim hover:text-text-bright px-3 py-1.5 rounded-lg text-sm transition-colors"
-                    >
-                      <span>{def.icon}</span>
-                      <span>{def.label}</span>
-                    </button>
-                  ))}
-                </div>
+          {editing && hiddenCards.length > 0 && (
+            <div className="bg-surface rounded-2xl p-4 mt-4">
+              <p className="text-text-dim text-xs font-medium uppercase tracking-wide mb-2">Add card</p>
+              <div className="flex flex-wrap gap-2">
+                {hiddenCards.map((def) => (
+                  <button
+                    key={def.id}
+                    onClick={() => handleAdd(def.id)}
+                    className="flex items-center gap-1.5 bg-surface-light hover:bg-surface-lighter text-text-dim hover:text-text-bright px-3 py-1.5 rounded-lg text-sm transition-colors"
+                  >
+                    <span className="text-text-dim">{CARD_ICONS[def.id]}</span>
+                    <span>{def.label}</span>
+                  </button>
+                ))}
               </div>
-            )}
-          </div>
-        </>
+            </div>
+          )}
+        </div>
       )}
+    </div>
+  );
+}
+
+function CardSkeleton() {
+  return (
+    <div className="h-full animate-pulse space-y-2">
+      <div className="h-4 w-24 rounded bg-surface-lighter" />
+      <div className="h-3 w-full rounded bg-surface-lighter/70" />
+      <div className="h-3 w-4/5 rounded bg-surface-lighter/50" />
     </div>
   );
 }

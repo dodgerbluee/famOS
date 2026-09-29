@@ -164,7 +164,7 @@ export function Tasks() {
 }
 
 function TaskRow({ task, onToggle }: { task: VikunjaTaskSimple; onToggle: (id: number, done: boolean) => void }) {
-  const formatDue = (dateStr: string) => {
+  const formatDue = (dateStr?: string) => {
     if (!dateStr) return null;
     const d = new Date(dateStr);
     const now = new Date();

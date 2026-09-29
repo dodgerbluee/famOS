@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
+import { useRef, useEffect, useCallback, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
 import { type GridCardConfig, GRID_COLS, CARD_MIN_SIZES, hasCollision, rectsOverlap, isInBounds, computeCellDimensions, GRID_GAP } from '../../lib/gridLayout';
 
 interface GridCardProps {
@@ -42,21 +42,8 @@ export function GridCard({
   card, label, editing, allCards, containerRef,
   gridMode, totalRows, pulseColor, onMove, onSwap, onResize, onRemove, children,
 }: GridCardProps) {
-  const CARD_REFERENCE_WIDTH = 300;
   const cardRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
-  const [contentScale, setContentScale] = useState(1);
-
-  useEffect(() => {
-    const el = cardRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver(([entry]) => {
-      const w = entry.contentRect.width;
-      setContentScale(Math.max(0.55, Math.min(1, w / CARD_REFERENCE_WIDTH)));
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
   const cardDataRef = useRef({ card, allCards, gridMode, totalRows });
   cardDataRef.current = { card, allCards, gridMode, totalRows };
 
@@ -265,15 +252,9 @@ export function GridCard({
       )}
 
       {/* Card content */}
-      <div className="w-full h-full overflow-hidden">
+      <div className="@container w-full h-full overflow-hidden">
         <div
-          className={`flex flex-col overflow-y-auto overflow-x-hidden ${editing ? 'px-3 pb-3 pt-7' : 'px-3 pb-3 pt-2.5'}`}
-          style={{
-            transformOrigin: 'top left',
-            transform: `scale(${contentScale})`,
-            width: `${100 / contentScale}%`,
-            height: `${100 / contentScale}%`,
-          }}
+          className={`flex flex-col overflow-y-auto overflow-x-hidden h-full ${editing ? 'px-3 pb-3 pt-7' : 'px-3 pb-3 pt-2.5'}`}
         >
           {children}
         </div>

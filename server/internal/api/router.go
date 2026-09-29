@@ -59,6 +59,7 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RealIP)
+	r.Use(middleware.Compress(5, "text/html", "text/css", "application/javascript", "application/json", "image/svg+xml", "text/javascript"))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{cfg.FrontendURL, "http://localhost:5173", "http://localhost:3000"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -84,10 +85,12 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 	camerasHandler := NewCamerasHandler(svc.Frigate, hub)
 	settingsHandler := &SettingsHandler{db: database, frigate: svc.Frigate, currency: svc.Currency, vikunja: svc.Vikunja}
 	aiProvidersHandler := NewAIProvidersHandler(database, svc.AI, cfg)
-	gatusHandler := NewGatusHandler(service.NewGatusService(database))
-	seerrHandler := NewSeerrHandler(service.NewSeerrService(database))
+	gatusSvc := service.NewGatusService(database)
+	seerrSvc := service.NewSeerrService(database)
+	gatusHandler := NewGatusHandler(gatusSvc)
+	seerrHandler := NewSeerrHandler(seerrSvc)
 	batchHandler := NewBatchHandler(batchSvc, scheduler)
-	vikunjaHandler := NewVikunjaHandler(service.NewVikunjaService(database))
+	vikunjaHandler := NewVikunjaHandler(svc.Vikunja)
 	choresHandler := NewChoresHandler(service.NewChoresService(database, svc.Cash), hub)
 	choreTemplatesHandler := NewChoreTemplatesHandler(svc.ChoreTemplates, hub)
 	tasksHandler := NewTasksHandler(svc.Vikunja, database)
@@ -97,6 +100,19 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 	oauthReg.Load()
 	oauthHandler := NewOAuthHandler(database, cfg, svc.Vikunja, oauthReg)
 	oauthAdminHandler := NewOAuthAdminHandler(database, oauthReg)
+	dashboardHandler := &DashboardHandler{
+		db:       database,
+		cash:     svc.Cash,
+		cal:      svc.Calendar,
+		chores:   svc.ChoreTemplates,
+		weather:  svc.Weather,
+		ai:       svc.AI,
+		gatus:    gatusSvc,
+		seerr:    seerrSvc,
+		vikunja:  svc.Vikunja,
+		currency: svc.Currency,
+		location: loc,
+	}
 
 	// Middleware
 	authMw := auth.AuthMiddleware(database, cfg.SessionSecret)
@@ -175,6 +191,7 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 		r.Get("/api/uploads/{filename}", uploadsHandler.Serve)
 
 		r.Get("/api/settings", settingsHandler.Get)
+		r.Get("/api/dashboard", dashboardHandler.Get)
 
 		r.Get("/ws", func(w http.ResponseWriter, r *http.Request) {
 			ServeWS(hub, w, r)
@@ -294,12 +311,20 @@ func spaHandler(staticDir string) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
-		fullPath := filepath.Join(staticDir, path)
-		if _, err := fs.Stat(os.DirFS(staticDir), strings.TrimPrefix(path, "/")); err != nil {
+		rel := strings.TrimPrefix(path, "/")
+		if rel == "" || rel == "index.html" {
+			w.Header().Set("Cache-Control", "no-cache")
 			http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
 			return
 		}
-		_ = fullPath
+		if _, err := fs.Stat(os.DirFS(staticDir), rel); err != nil {
+			w.Header().Set("Cache-Control", "no-cache")
+			http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
+			return
+		}
+		if strings.HasPrefix(path, "/assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
 		fileServer.ServeHTTP(w, r)
 	}
 }

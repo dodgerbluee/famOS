@@ -14,7 +14,7 @@ export function EventDetail({ event, onClose, onUpdated }: EventDetailProps) {
   const timezone = useTimezone();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(event.title);
-  const [description, setDescription] = useState(event.description);
+  const [description, setDescription] = useState(event.description ?? '');
   const [location, setLocation] = useState(event.location);
   const [date, setDate] = useState(getDateKey(event.startAt, timezone));
   const [startTime, setStartTime] = useState(formatTime(event.startAt, timezone, { hour: '2-digit', minute: '2-digit', hour12: false }));

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api, CONDITION_ICONS, type WeatherData, type AirQuality } from '../../api/client';
+import { useQuery } from '../../lib/query';
 import { formatDate, formatTime, useTimezone } from '../../lib/timezone';
 
 interface WeatherInsight {
@@ -18,23 +19,20 @@ interface WeatherCardProps {
 }
 
 export function WeatherCard({ compact }: WeatherCardProps) {
-  const [weather, setWeather] = useState<WeatherData | null>(null);
-  const [insight, setInsight] = useState<WeatherInsight | null>(null);
+  const { data: weatherFromApi, error: weatherError } = useQuery<WeatherData>(
+    '/api/weather',
+    () => api.get<WeatherData>('/api/weather'),
+    { staleTime: 60_000 },
+  );
+  const { data: insightPayload } = useQuery<WeatherWithInsight>(
+    compact ? null : '/api/ai/weather-insight',
+    () => api.get<WeatherWithInsight>('/api/ai/weather-insight'),
+    { staleTime: 60_000, enabled: !compact },
+  );
+  const weather = insightPayload?.weather ?? weatherFromApi ?? null;
+  const insight = insightPayload?.insight ?? null;
   const timezone = useTimezone();
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api.get<WeatherData>('/api/weather')
-      .then(setWeather)
-      .catch((e) => setError(e.message));
-
-    api.get<WeatherWithInsight>('/api/ai/weather-insight')
-      .then((data) => {
-        setWeather(data.weather);
-        setInsight(data.insight);
-      })
-      .catch(() => {});
-  }, []);
+  const error = weatherError?.message ?? null;
 
   if (error) {
     return (
