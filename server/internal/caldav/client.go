@@ -390,37 +390,3 @@ func firstNonEmptyCalendar(values ...string) string {
 	}
 	return ""
 }
-
-func parsedFromICalEvent(ev ical.Event, loc *time.Location) ParsedEvent {
-	parsed := ParsedEvent{}
-
-	parsed.UID, _ = ev.Props.Text(ical.PropUID)
-	parsed.Summary, _ = ev.Props.Text(ical.PropSummary)
-	parsed.Description, _ = ev.Props.Text(ical.PropDescription)
-	parsed.Location, _ = ev.Props.Text(ical.PropLocation)
-
-	dtStart, err := ev.DateTimeStart(loc)
-	if err == nil {
-		parsed.StartAt = dtStart
-	}
-
-	dtEnd, err := ev.DateTimeEnd(loc)
-	if err == nil {
-		parsed.EndAt = dtEnd
-	}
-
-	if dtStartProp := ev.Props.Get(ical.PropDateTimeStart); dtStartProp != nil {
-		if v := dtStartProp.Params.Get("VALUE"); v == "DATE" {
-			parsed.AllDay = true
-			if parsed.EndAt.IsZero() {
-				parsed.EndAt = parsed.StartAt.Add(24 * time.Hour)
-			}
-		}
-	}
-
-	if rruleProp := ev.Props.Get(ical.PropRecurrenceRule); rruleProp != nil {
-		parsed.RecurrenceRule = rruleProp.Value
-	}
-
-	return parsed
-}
