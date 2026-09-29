@@ -40,7 +40,7 @@ export function NavRail() {
   const visible = navItems.filter((item) => hasPermission(item.permission));
 
   return (
-    <nav className="hidden md:flex flex-col w-[4.5rem] shrink-0 py-3 gap-1">
+    <nav className="hidden md:flex flex-col w-24 shrink-0 py-3 gap-0.5">
       {visible.map((item) => (
         <NavLink
           key={item.to}
@@ -49,9 +49,9 @@ export function NavRail() {
           className="flex flex-col items-center justify-center min-h-[56px] mx-2 rounded-xl hover:bg-surface-lighter/60"
         >
           {({ isActive }) => (
-            <div className={`flex flex-col items-center gap-0.5 px-1 ${isActive ? 'text-primary-light' : 'text-text-dim'}`}>
+            <div className={`flex flex-col items-center gap-0.5 px-1 text-center ${isActive ? 'text-primary-light' : 'text-text-dim'}`}>
               {item.icon(isActive)}
-              <span className="text-[10px] font-medium">{item.label}</span>
+              <span className="text-[10px] font-medium leading-tight">{item.label}</span>
             </div>
           )}
         </NavLink>
