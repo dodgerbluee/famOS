@@ -1,33 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api, type Camera } from '../api/client';
+import type { Camera } from '../api/client';
 import { CameraGrid } from '../components/cameras/CameraGrid';
 import { CameraFullscreen } from '../components/cameras/CameraFullscreen';
 import { EventTimeline } from '../components/cameras/EventTimeline';
-import { useAuth } from '../contexts/AuthContext';
-import { useQuery, setQueryData } from '../lib/query';
 
 export function Cameras() {
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
   const [view, setView] = useState<'grid' | 'timeline'>('grid');
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user } = useAuth();
-  const { data: settings } = useQuery<Record<string, string>>(
-    '/api/settings',
-    () => api.get<Record<string, string>>('/api/settings'),
-    { staleTime: 30_000 },
-  );
-
-  const [liveMosaic, setLiveMosaic] = useState(false);
-
-  useEffect(() => {
-    if (user?.sessionType === 'kiosk' && settings?.cameras_live_mosaic !== 'true') {
-      setLiveMosaic(false);
-      return;
-    }
-    if (settings?.cameras_live_mosaic === 'true') setLiveMosaic(true);
-    if (settings?.cameras_live_mosaic === 'false') setLiveMosaic(false);
-  }, [settings, user]);
 
   useEffect(() => {
     const cameraName = searchParams.get('camera');
@@ -48,28 +29,11 @@ export function Cameras() {
     }, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  const toggleLiveMosaic = () => {
-    const next = !liveMosaic;
-    setLiveMosaic(next);
-    if (settings) {
-      setQueryData('/api/settings', { ...settings, cameras_live_mosaic: next ? 'true' : 'false' });
-    }
-    api.put('/api/settings', { cameras_live_mosaic: next ? 'true' : 'false' }).catch(() => {});
-  };
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-bold text-text-bright">Cameras</h1>
         <div className="flex items-center gap-3">
-          <button
-            onClick={toggleLiveMosaic}
-            className={`inline-flex min-h-[44px] items-center rounded-xl px-4 py-2 text-sm font-medium ${
-              liveMosaic ? 'bg-accent-red/20 text-accent-red' : 'bg-surface-light text-text-bright'
-            }`}
-          >
-            {liveMosaic ? 'Live mosaic on' : 'Live mosaic'}
-          </button>
           <a
             href="/api/cameras/frigate/open"
             target="_blank"
@@ -85,7 +49,7 @@ export function Cameras() {
                 view === 'grid' ? 'bg-primary text-white' : 'text-text-dim'
               }`}
             >
-              Grid
+              Live
             </button>
             <button
               onClick={() => setView('timeline')}
@@ -101,7 +65,7 @@ export function Cameras() {
 
       {!selectedCamera && (
         view === 'grid' ? (
-          <CameraGrid onSelect={setSelectedCamera} liveMosaic={liveMosaic} />
+          <CameraGrid onSelect={setSelectedCamera} />
         ) : (
           <div className="bg-surface rounded-2xl p-4">
             <h2 className="text-lg font-semibold text-text-bright mb-3">Recent Events</h2>

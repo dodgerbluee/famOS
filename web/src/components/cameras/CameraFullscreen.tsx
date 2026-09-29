@@ -75,12 +75,13 @@ export function CameraFullscreen({ camera, onClose }: CameraFullscreenProps) {
         </div>
       </div>
       {error && <p className="text-red-400 text-sm text-center px-4 -mt-2">{error}</p>}
-      <div className="flex-1 flex items-center justify-center p-2 min-h-0" onClick={onClose}>
+      <div className="relative flex-1 min-h-0" onClick={onClose}>
         <LiveStream
           cameraName={camera.name}
-          className="max-w-full max-h-full object-contain rounded-lg"
+          className="absolute inset-2 object-contain rounded-lg"
           fallbackPollMs={2000}
           snapshotHeight={720}
+          showStatus
         />
       </div>
     </div>

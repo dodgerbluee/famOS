@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { MotionAlert } from '../../api/client';
 import { formatTime, useTimezone } from '../../lib/timezone';
+import { LiveStream } from './LiveStream';
 
 interface MotionAlertTrayProps {
   alerts: MotionAlert[];
@@ -81,19 +82,36 @@ function AlertCard({
 
   const icon = LABEL_ICONS[alert.label] || '⚠️';
   const cardWidth = solo ? 'w-[480px]' : 'w-[340px]';
+  const snapshotUrl = `/api/cameras/${alert.camera}/snapshot?t=${alert.eventId}`;
   const thumbnailUrl = `/api/cameras/events/${alert.eventId}/thumbnail?t=${alert.eventId}`;
 
   return (
     <div className={`${cardWidth} max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-accent-yellow/30 bg-surface shadow-2xl`}>
       <div onClick={onView} className="relative bg-black cursor-pointer" style={{ paddingBottom: '56.25%' }}>
-        <img
-          src={thumbnailUrl}
-          alt={alert.camera}
+        <LiveStream
+          cameraName={alert.camera}
           className="absolute inset-0 w-full h-full object-cover"
+          snapshotSrc={snapshotUrl}
+          snapshotHeight={720}
+          showStatus
+          statusCorner="tl"
+          fallbackPollMs={0}
+          ignorePause
         />
-        <span className="absolute top-2 left-2 bg-accent-yellow/80 text-black text-[10px] font-bold px-2 py-0.5 rounded">
-          {alert.label.toUpperCase()}
-        </span>
+
+        <button
+          onClick={(e) => { e.stopPropagation(); onOpenSnapshot(); }}
+          className="absolute bottom-2 right-2 w-[35%] rounded-lg overflow-hidden border-2 border-accent-yellow/50 shadow-lg hover:border-accent-yellow transition-colors z-10"
+        >
+          <img
+            src={thumbnailUrl}
+            alt="Detection"
+            className="w-full aspect-video object-cover"
+          />
+          <span className="absolute top-0.5 left-0.5 bg-accent-yellow/80 text-black text-[8px] font-bold px-1 py-px rounded">
+            {alert.label.toUpperCase()}
+          </span>
+        </button>
       </div>
 
       <div className="flex items-center justify-between gap-2 px-3 py-2.5">
@@ -115,12 +133,6 @@ function AlertCard({
               Cameras
             </button>
           )}
-          <button
-            onClick={(e) => { e.stopPropagation(); onOpenSnapshot(); }}
-            className="rounded-lg bg-surface-lighter px-2.5 py-1.5 text-xs font-medium text-text-bright"
-          >
-            Photo
-          </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDismiss(); }}
             className="flex h-7 w-7 items-center justify-center rounded-full text-text-dim hover:text-text-bright text-lg"
