@@ -1,22 +1,21 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { api, cameraSnapshotUrl, type Camera } from '../../api/client';
+import { api, type Camera } from '../../api/client';
 import { useIsMobile } from '../../hooks/useIsMobile';
-import { useQuery } from '../../lib/query';
+import { useQuery, setQueryData } from '../../lib/query';
 import { LiveStream } from './LiveStream';
 
 interface CameraGridProps {
   onSelect?: (camera: Camera) => void;
-  liveMosaic: boolean;
 }
 
 type Settings = Record<string, string>;
 
-export function CameraGrid({ onSelect, liveMosaic }: CameraGridProps) {
+const STREAM_START_STAGGER_MS = 250;
+
+export function CameraGrid({ onSelect }: CameraGridProps) {
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [cameraOrder, setCameraOrder] = useState<string[]>([]);
-  const [cameraFitModes, setCameraFitModes] = useState<Record<string, 'cover' | 'contain'>>({});
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
   const isMobile = useIsMobile();
@@ -25,6 +24,8 @@ export function CameraGrid({ onSelect, liveMosaic }: CameraGridProps) {
     () => api.get<Settings>('/api/settings'),
     { staleTime: 30_000 },
   );
+  const cameraOrder = parseCameraOrder(settings?.camera_order);
+  const cameraFitModes = parseCameraFitModes(settings?.camera_fit_modes || '');
 
   const load = useCallback(() => {
     api.get<{ available: boolean }>('/api/cameras/status')
@@ -41,17 +42,12 @@ export function CameraGrid({ onSelect, liveMosaic }: CameraGridProps) {
     load();
   }, [load]);
 
-  useEffect(() => {
-    if (!settings) return;
-    const order = settings.camera_order ? JSON.parse(settings.camera_order) as string[] : [];
-    setCameraOrder(order);
-    setCameraFitModes(parseCameraFitModes(settings.camera_fit_modes || ''));
-  }, [settings]);
-
   const sortedCameras = sortCameras(cameras, cameraOrder);
 
   const saveOrder = (order: string[]) => {
-    setCameraOrder(order);
+    if (settings) {
+      setQueryData('/api/settings', { ...settings, camera_order: JSON.stringify(order) });
+    }
     api.put('/api/settings', { camera_order: JSON.stringify(order) }).catch(() => {});
   };
 
@@ -138,7 +134,6 @@ export function CameraGrid({ onSelect, liveMosaic }: CameraGridProps) {
           onDragEnd={handleDragEnd}
           fitMode={cameraFitModes[cam.name] || 'cover'}
           disableDrag={isMobile}
-          live={liveMosaic}
         />
       ))}
     </div>
@@ -154,18 +149,10 @@ interface CameraTileProps {
   onDragEnd: () => void;
   fitMode: 'cover' | 'contain';
   disableDrag?: boolean;
-  live: boolean;
 }
 
-function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragEnd, fitMode, disableDrag, live }: CameraTileProps) {
-  const [refreshKey, setRefreshKey] = useState(0);
+function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragEnd, fitMode, disableDrag }: CameraTileProps) {
   const fit = fitMode === 'contain' ? 'object-contain' : 'object-cover';
-
-  useEffect(() => {
-    if (live) return;
-    const interval = setInterval(() => setRefreshKey((k) => k + 1), 10_000);
-    return () => clearInterval(interval);
-  }, [live]);
 
   return (
     <div
@@ -179,27 +166,15 @@ function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragE
       onClick={() => onSelect?.(camera)}
     >
       <div className="relative w-full bg-black" style={{ paddingBottom: '50%' }}>
-        <img
-          src={`${cameraSnapshotUrl(camera.name, 360)}&t=${refreshKey}`}
-          alt={camera.name}
-          className={`absolute inset-0 w-full h-full ${fit} ${live ? 'opacity-0' : 'opacity-100'}`}
+        <LiveStream
+          cameraName={camera.name}
+          className={`absolute inset-0 w-full h-full ${fit}`}
+          snapshotHeight={360}
+          staggerMs={index * STREAM_START_STAGGER_MS}
+          showStatus
+          fallbackPollMs={0}
         />
-        {live && (
-          <LiveStream
-            cameraName={camera.name}
-            className={`absolute inset-0 w-full h-full ${fit}`}
-            fallbackPollMs={10_000}
-            snapshotHeight={360}
-          />
-        )}
       </div>
-
-      {live && (
-        <div className="absolute top-2 right-2 bg-accent-red/90 rounded-full px-2 py-0.5 flex items-center gap-1">
-          <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-          <span className="text-white text-[10px] font-bold uppercase">Live</span>
-        </div>
-      )}
 
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 to-transparent p-2">
         <p className="text-white font-medium text-xs capitalize">
@@ -208,6 +183,16 @@ function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragE
       </div>
     </div>
   );
+}
+
+function parseCameraOrder(raw?: string): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 function parseCameraFitModes(raw: string): Record<string, 'cover' | 'contain'> {
