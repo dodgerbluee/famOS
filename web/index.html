@@ -3,11 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>web</title>
+    <meta name="theme-color" content="#0a0a0a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>famOS</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div style="min-height:100%;background:#0a0a0a;color:#e0e0e0;display:flex;flex-direction:column;font-family:system-ui,sans-serif">
+        <div style="height:45px;margin:16px 16px 8px;border-radius:16px;background:#121212;border:1px solid #2d2d2d"></div>
+        <div style="flex:1;margin:0 16px 16px;border-radius:16px;background:#121212;border:1px solid #2d2d2d"></div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

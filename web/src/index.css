@@ -25,7 +25,7 @@ html, body, #root {
   color-scheme: dark;
   background-color: var(--color-bg);
   color: var(--color-text);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: system-ui, -apple-system, sans-serif;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
   overflow: hidden;
@@ -54,13 +54,32 @@ select, input, textarea {
 }
 
 @keyframes subtle-pulse {
-  0%, 100% { box-shadow: inset 0 0 0 0px transparent; }
-  50% { box-shadow: inset 0 0 0 2px var(--pulse-color, var(--color-accent-peach)); }
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
 }
 
 .animate-subtle-pulse {
+  position: relative;
+}
+
+.animate-subtle-pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 2px solid var(--pulse-color, var(--color-accent-peach));
+  pointer-events: none;
   animation: subtle-pulse 3s ease-in-out infinite;
 }
 
 .animate-subtle-pulse--red { --pulse-color: var(--color-accent-red); }
 .animate-subtle-pulse--pink { --pulse-color: var(--color-accent-pink); }
+
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+}

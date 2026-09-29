@@ -1,19 +1,17 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { api, type Camera } from '../../api/client';
+import { api, cameraSnapshotUrl, type Camera } from '../../api/client';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useQuery } from '../../lib/query';
+import { LiveStream } from './LiveStream';
 
 interface CameraGridProps {
   onSelect?: (camera: Camera) => void;
+  liveMosaic: boolean;
 }
 
 type Settings = Record<string, string>;
 
-// Fan connection attempts out over time instead of firing them all in the
-// same instant (avoids a thundering-herd of simultaneous go2rtc cold-starts),
-// without ever permanently blocking a tile from connecting.
-const STREAM_START_STAGGER_MS = 250;
-
-export function CameraGrid({ onSelect }: CameraGridProps) {
+export function CameraGrid({ onSelect, liveMosaic }: CameraGridProps) {
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -22,17 +20,16 @@ export function CameraGrid({ onSelect }: CameraGridProps) {
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
   const isMobile = useIsMobile();
+  const { data: settings } = useQuery<Settings>(
+    '/api/settings',
+    () => api.get<Settings>('/api/settings'),
+    { staleTime: 30_000 },
+  );
 
   const load = useCallback(() => {
-    Promise.all([
-      api.get<{ available: boolean }>('/api/cameras/status'),
-      api.get<Settings>('/api/settings'),
-    ])
-      .then(([status, settings]) => {
+    api.get<{ available: boolean }>('/api/cameras/status')
+      .then((status) => {
         setAvailable(status.available);
-        const order = settings.camera_order ? JSON.parse(settings.camera_order) as string[] : [];
-        setCameraOrder(order);
-        setCameraFitModes(parseCameraFitModes(settings.camera_fit_modes || ''));
         if (status.available) {
           return api.get<Camera[]>('/api/cameras').then(setCameras);
         }
@@ -43,6 +40,13 @@ export function CameraGrid({ onSelect }: CameraGridProps) {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!settings) return;
+    const order = settings.camera_order ? JSON.parse(settings.camera_order) as string[] : [];
+    setCameraOrder(order);
+    setCameraFitModes(parseCameraFitModes(settings.camera_fit_modes || ''));
+  }, [settings]);
 
   const sortedCameras = sortCameras(cameras, cameraOrder);
 
@@ -134,6 +138,7 @@ export function CameraGrid({ onSelect }: CameraGridProps) {
           onDragEnd={handleDragEnd}
           fitMode={cameraFitModes[cam.name] || 'cover'}
           disableDrag={isMobile}
+          live={liveMosaic}
         />
       ))}
     </div>
@@ -149,145 +154,18 @@ interface CameraTileProps {
   onDragEnd: () => void;
   fitMode: 'cover' | 'contain';
   disableDrag?: boolean;
+  live: boolean;
 }
 
-function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragEnd, fitMode, disableDrag }: CameraTileProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [liveReady, setLiveReady] = useState(false);
-  const [connecting, setConnecting] = useState(true);
+function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragEnd, fitMode, disableDrag, live }: CameraTileProps) {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const fit = fitMode === 'contain' ? 'object-contain' : 'object-cover';
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const ms = new MediaSource();
-    video.src = URL.createObjectURL(ms);
-
-    let ws: WebSocket | null = null;
-    let sb: SourceBuffer | null = null;
-    const queue: ArrayBuffer[] = [];
-    let receivedStreamData = false;
-    let cancelled = false;
-    let failTimer: ReturnType<typeof setTimeout> | null = null;
-    let playInterval: ReturnType<typeof setInterval> | null = null;
-    let staggerTimer: ReturnType<typeof setTimeout> | null = null;
-
-    function giveUp() {
-      setConnecting(false);
-      if (failTimer) { clearTimeout(failTimer); failTimer = null; }
-      if (playInterval) { clearInterval(playInterval); playInterval = null; }
-      ws?.close();
-      ws = null;
-      if (ms.readyState === 'open') {
-        try { ms.endOfStream(); } catch { /* ignore */ }
-      }
-    }
-
-    const MAX_QUEUED_CHUNKS = 60;
-    function pushChunk(chunk: ArrayBuffer) {
-      queue.push(chunk);
-      while (queue.length > MAX_QUEUED_CHUNKS) {
-        queue.shift();
-      }
-    }
-
-    function flushQueue() {
-      if (!sb || sb.updating || queue.length === 0) return;
-      const chunk = queue.shift()!;
-      try {
-        sb.appendBuffer(chunk);
-      } catch {
-        if (!sb.updating && ms.readyState === 'open') {
-          try {
-            const buffered = sb.buffered;
-            if (buffered.length > 0 && buffered.end(0) - buffered.start(0) > 30) {
-              sb.remove(buffered.start(0), buffered.end(0) - 10);
-            }
-          } catch { /* ignore */ }
-        }
-      }
-    }
-
-    async function onSourceOpen() {
-      if (index > 0) {
-        await new Promise<void>((resolve) => {
-          staggerTimer = setTimeout(resolve, index * STREAM_START_STAGGER_MS);
-        });
-      }
-      if (cancelled) return;
-
-      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      ws = new WebSocket(`${proto}//${location.host}/api/cameras/${camera.name}/stream`);
-      ws.binaryType = 'arraybuffer';
-
-      ws.onopen = () => {
-        ws!.send(JSON.stringify({ type: 'mse' }));
-      };
-
-      ws.onmessage = (ev) => {
-        if (typeof ev.data === 'string') {
-          const msg = JSON.parse(ev.data);
-          if (msg.type === 'mse' && !sb) {
-            try {
-              sb = ms.addSourceBuffer(msg.value);
-              sb.mode = 'segments';
-              sb.addEventListener('updateend', flushQueue);
-              receivedStreamData = true;
-            } catch {
-              giveUp();
-            }
-          }
-        } else if (ev.data instanceof ArrayBuffer && sb) {
-          receivedStreamData = true;
-          if (sb.updating) {
-            pushChunk(ev.data);
-          } else {
-            try { sb.appendBuffer(ev.data); }
-            catch { pushChunk(ev.data); }
-          }
-        }
-      };
-
-      ws.onerror = () => { if (!receivedStreamData) giveUp(); };
-      ws.onclose = () => { if (!receivedStreamData) giveUp(); };
-
-      failTimer = setTimeout(() => {
-        if (!receivedStreamData) giveUp();
-      }, 8000);
-
-      playInterval = setInterval(() => {
-        if (!video) return;
-        if (video.paused && video.readyState >= 2) {
-          video.play().catch(() => {});
-        }
-        if (video.readyState >= 2 && !liveReady) {
-          setLiveReady(true);
-          setConnecting(false);
-        }
-        if (video.buffered.length > 0) {
-          const end = video.buffered.end(video.buffered.length - 1);
-          if (end - video.currentTime > 3) {
-            video.currentTime = end - 0.5;
-          }
-        }
-      }, 500);
-    }
-
-    ms.addEventListener('sourceopen', onSourceOpen);
-
-    return () => {
-      cancelled = true;
-      ms.removeEventListener('sourceopen', onSourceOpen);
-      if (staggerTimer) clearTimeout(staggerTimer);
-      if (failTimer) clearTimeout(failTimer);
-      if (playInterval) clearInterval(playInterval);
-      ws?.close();
-      if (ms.readyState === 'open') {
-        try { ms.endOfStream(); } catch { /* ignore */ }
-      }
-      URL.revokeObjectURL(video.src);
-    };
-  }, [camera.name]);
+    if (live) return;
+    const interval = setInterval(() => setRefreshKey((k) => k + 1), 10_000);
+    return () => clearInterval(interval);
+  }, [live]);
 
   return (
     <div
@@ -301,38 +179,22 @@ function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragE
       onClick={() => onSelect?.(camera)}
     >
       <div className="relative w-full bg-black" style={{ paddingBottom: '50%' }}>
-        {/* Snapshot — always rendered, hidden when live is ready */}
         <img
-          src={`${camera.snapshotUrl}?t=${Date.now()}`}
+          src={`${cameraSnapshotUrl(camera.name, 360)}&t=${refreshKey}`}
           alt={camera.name}
-          className={`absolute inset-0 w-full h-full ${fitMode === 'contain' ? 'object-contain' : 'object-cover'} transition-opacity duration-300 ${liveReady ? 'opacity-0' : 'opacity-100'}`}
+          className={`absolute inset-0 w-full h-full ${fit} ${live ? 'opacity-0' : 'opacity-100'}`}
         />
-        {/* Live video — layered on top, fades in when ready */}
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className={`absolute inset-0 w-full h-full ${fitMode === 'contain' ? 'object-contain' : 'object-cover'} transition-opacity duration-300 ${liveReady ? 'opacity-100' : 'opacity-0'}`}
-        />
+        {live && (
+          <LiveStream
+            cameraName={camera.name}
+            className={`absolute inset-0 w-full h-full ${fit}`}
+            fallbackPollMs={10_000}
+            snapshotHeight={360}
+          />
+        )}
       </div>
 
-      {/* Loading spinner in top-right while connecting */}
-      {connecting && (
-        <div className="absolute top-2 right-2 bg-black/50 rounded-full p-1.5">
-          <svg
-            className="animate-spin w-4 h-4 text-white"
-            viewBox="0 0 24 24"
-            fill="none"
-          >
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-        </div>
-      )}
-
-      {/* Live indicator when streaming */}
-      {liveReady && (
+      {live && (
         <div className="absolute top-2 right-2 bg-accent-red/90 rounded-full px-2 py-0.5 flex items-center gap-1">
           <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
           <span className="text-white text-[10px] font-bold uppercase">Live</span>

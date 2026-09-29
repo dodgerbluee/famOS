@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
-import { api } from '../api/client';
+import { api, immichAssetUrl } from '../api/client';
 import { useIdleTimeout } from '../hooks/useIdleTimeout';
+import { useIdleReporter } from '../contexts/IdleContext';
+import { useQuery } from '../lib/query';
 
 interface ImmichAsset {
   id: string;
@@ -9,48 +11,66 @@ interface ImmichAsset {
 }
 
 const DISPLAY_INTERVAL = 20000;
+const ALBUM_REFRESH_MS = 60 * 60 * 1000;
 
 export function Screensaver() {
-  const [timeoutSec, setTimeoutSec] = useState(0);
+  const { data: settings } = useQuery<Record<string, string>>(
+    '/api/settings',
+    () => api.get<Record<string, string>>('/api/settings'),
+    { staleTime: 60_000 },
+  );
+  const timeoutSec = parseTimeout(settings?.screensaver_timeout);
   const { isIdle, resetIdle } = useIdleTimeout(timeoutSec);
+  const setIdle = useIdleReporter();
   const [photos, setPhotos] = useState<ImmichAsset[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [clock, setClock] = useState('');
   const [clockDate, setClockDate] = useState('');
   const [showInfo, setShowInfo] = useState(false);
+  const [chromeVisible, setChromeVisible] = useState(false);
+  const [front, setFront] = useState<'a' | 'b'>('a');
+  const [srcA, setSrcA] = useState('');
+  const [srcB, setSrcB] = useState('');
   const rotateRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const lastShownRef = useRef<string | null>(null);
   const photosRef = useRef<ImmichAsset[]>([]);
   const currentIndexRef = useRef(0);
   const inflightRef = useRef(false);
+  const goNextRef = useRef<() => Promise<void>>(async () => {});
   const gestureStartRef = useRef<{ x: number; y: number } | null>(null);
+  const albumFetchedAt = useRef(0);
+
+  useEffect(() => {
+    setIdle(isIdle && timeoutSec > 0);
+    return () => setIdle(false);
+  }, [isIdle, timeoutSec, setIdle]);
 
   useEffect(() => {
     currentIndexRef.current = currentIndex;
   }, [currentIndex]);
 
   useEffect(() => {
-    api.get<Record<string, string>>('/api/settings').then((settings) => {
-      const raw = settings.screensaver_timeout;
-      const parsed = raw ? parseInt(raw, 10) : 0;
-      setTimeoutSec(parsed > 0 ? parsed : 0);
-    }).catch(() => {});
-  }, []);
-
-  useEffect(() => {
     if (!isIdle) {
       if (rotateRef.current) clearTimeout(rotateRef.current);
       inflightRef.current = false;
+      setChromeVisible(false);
       return;
     }
 
-    if (photos.length === 0) {
+    const albumStale = Date.now() - albumFetchedAt.current > ALBUM_REFRESH_MS;
+    if (photos.length === 0 || albumStale) {
       api.get<ImmichAsset[]>('/api/immich/album').then((assets) => {
         const shuffled = shuffleAvoidingRepeat(assets, lastShownRef.current);
         setPhotos(shuffled);
         photosRef.current = shuffled;
         setCurrentIndex(0);
         lastShownRef.current = shuffled[0]?.id ?? null;
+        albumFetchedAt.current = Date.now();
+        if (shuffled[0]) {
+          const url = immichAssetUrl(shuffled[0].id, 'preview');
+          setSrcA(url);
+          setFront('a');
+        }
       }).catch(() => setPhotos([]));
     }
 
@@ -68,7 +88,7 @@ export function Screensaver() {
   const scheduleNext = () => {
     if (rotateRef.current) clearTimeout(rotateRef.current);
     rotateRef.current = setTimeout(() => {
-      void goNext();
+      void goNextRef.current();
     }, DISPLAY_INTERVAL);
   };
 
@@ -82,6 +102,19 @@ export function Screensaver() {
       inflightRef.current = false;
     };
   }, [isIdle, photos.length]);
+
+  const showPhoto = (asset: ImmichAsset, index: number) => {
+    const url = immichAssetUrl(asset.id, 'preview');
+    if (front === 'a') {
+      setSrcB(url);
+      setFront('b');
+    } else {
+      setSrcA(url);
+      setFront('a');
+    }
+    setCurrentIndex(index);
+    lastShownRef.current = asset.id;
+  };
 
   const goNext = async () => {
     if (inflightRef.current || photosRef.current.length === 0) return;
@@ -107,18 +140,18 @@ export function Screensaver() {
     }
 
     try {
-      await preloadImage(`/api/immich/assets/${next.id}`);
+      await preloadImage(immichAssetUrl(next.id, 'preview'));
     } catch {
       inflightRef.current = false;
       scheduleNext();
       return;
     }
 
-    setCurrentIndex(nextIndex);
-    lastShownRef.current = next.id;
+    showPhoto(next, nextIndex);
     inflightRef.current = false;
     scheduleNext();
   };
+  goNextRef.current = goNext;
 
   const goPrevious = async () => {
     if (inflightRef.current || photosRef.current.length === 0) return;
@@ -126,19 +159,17 @@ export function Screensaver() {
     const prev = photosRef.current[prevIndex];
     if (!prev) return;
     try {
-      await preloadImage(`/api/immich/assets/${prev.id}`);
+      await preloadImage(immichAssetUrl(prev.id, 'preview'));
     } catch {
       return;
     }
-    setCurrentIndex(prevIndex);
-    lastShownRef.current = prev.id;
+    showPhoto(prev, prevIndex);
     scheduleNext();
   };
 
   if (!isIdle || timeoutSec <= 0) return null;
 
   const currentPhoto = photos[currentIndex] ?? null;
-  const imgA = currentPhoto ? `/api/immich/assets/${currentPhoto.id}` : '';
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     gestureStartRef.current = { x: e.clientX, y: e.clientY };
@@ -152,8 +183,15 @@ export function Screensaver() {
     const dy = e.clientY - start.y;
     if (Math.abs(dy) > Math.abs(dx) && dy < -80) {
       resetIdle();
+    }
+  };
+
+  const handlePhotoTap = () => {
+    if (!chromeVisible) {
+      setChromeVisible(true);
       return;
     }
+    resetIdle();
   };
 
   return (
@@ -166,64 +204,77 @@ export function Screensaver() {
       {photos.length > 0 ? (
         <button
           type="button"
-          onDoubleClick={resetIdle}
+          onClick={handlePhotoTap}
           className="absolute inset-0 block h-full w-full cursor-default bg-transparent"
-          aria-label="Double-click to wake screensaver"
+          aria-label="Tap to show controls, tap again to wake"
         >
           <img
-            src={imgA}
-            className="absolute inset-0 w-full h-full object-contain"
+            src={srcA}
+            className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-500 ${front === 'a' ? 'opacity-100' : 'opacity-0'}`}
+            alt=""
+          />
+          <img
+            src={srcB}
+            className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-500 ${front === 'b' ? 'opacity-100' : 'opacity-0'}`}
             alt=""
           />
         </button>
       ) : null}
 
-      <div className="absolute bottom-4 left-4 md:bottom-8 md:left-8 text-white/80">
+      <div className="absolute bottom-4 left-4 md:bottom-8 md:left-8 text-white/80 pointer-events-none">
         <div className="text-[3rem] md:text-[6rem] leading-none font-light">{clock}</div>
         <div className="text-xl md:text-3xl font-light text-white/50 mt-2">{clockDate}</div>
       </div>
 
-      <button
-        type="button"
-        onClick={() => { void goPrevious(); }}
-        className="absolute left-3 md:left-6 top-1/2 -translate-y-1/2 rounded-full bg-black/40 px-3 py-2 md:px-4 md:py-3 text-2xl md:text-3xl text-white/75 transition hover:bg-black/55 hover:text-white"
-      >
-        ‹
-      </button>
-      <button
-        type="button"
-        onClick={() => { void goNext(); }}
-        className="absolute right-3 md:right-6 top-1/2 -translate-y-1/2 rounded-full bg-black/40 px-3 py-2 md:px-4 md:py-3 text-2xl md:text-3xl text-white/75 transition hover:bg-black/55 hover:text-white"
-      >
-        ›
-      </button>
+      {chromeVisible && (
+        <>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); void goPrevious(); }}
+            className="absolute left-3 md:left-6 top-1/2 -translate-y-1/2 rounded-full bg-black/40 px-3 py-2 md:px-4 md:py-3 text-2xl md:text-3xl text-white/75 transition hover:bg-black/55 hover:text-white"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); void goNext(); }}
+            className="absolute right-3 md:right-6 top-1/2 -translate-y-1/2 rounded-full bg-black/40 px-3 py-2 md:px-4 md:py-3 text-2xl md:text-3xl text-white/75 transition hover:bg-black/55 hover:text-white"
+          >
+            ›
+          </button>
 
-      {/* Info button + photo date */}
-      <div className="absolute bottom-4 right-4 md:bottom-8 md:right-8 flex items-center gap-3">
-        {showInfo && currentPhoto?.createdAt && (
-          <div className="bg-black/50 backdrop-blur-sm rounded-xl px-4 py-2 text-white/80 text-sm">
-            {new Date(currentPhoto.createdAt).toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-            <span className="text-white/50 ml-2">
-              {new Date(currentPhoto.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-            </span>
+          <div className="absolute bottom-4 right-4 md:bottom-8 md:right-8 flex items-center gap-3">
+            {showInfo && currentPhoto?.createdAt && (
+              <div className="bg-black/50 rounded-xl px-4 py-2 text-white/80 text-sm">
+                {new Date(currentPhoto.createdAt).toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                <span className="text-white/50 ml-2">
+                  {new Date(currentPhoto.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                </span>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setShowInfo((v) => !v); }}
+              className={`w-10 h-10 flex items-center justify-center rounded-full transition ${
+                showInfo ? 'bg-white/20 text-white' : 'bg-black/40 text-white/60 hover:bg-black/55 hover:text-white/80'
+              }`}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+            </button>
           </div>
-        )}
-        <button
-          type="button"
-          onClick={() => setShowInfo((v) => !v)}
-          className={`w-10 h-10 flex items-center justify-center rounded-full transition ${
-            showInfo ? 'bg-white/20 text-white' : 'bg-black/40 text-white/60 hover:bg-black/55 hover:text-white/80'
-          }`}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="16" x2="12" y2="12" />
-            <line x1="12" y1="8" x2="12.01" y2="8" />
-          </svg>
-        </button>
-      </div>
+        </>
+      )}
     </div>
   );
+}
+
+function parseTimeout(raw?: string) {
+  const parsed = raw ? parseInt(raw, 10) : 0;
+  return parsed > 0 ? parsed : 0;
 }
 
 function shuffleAvoidingRepeat(arr: ImmichAsset[], lastShownId: string | null) {

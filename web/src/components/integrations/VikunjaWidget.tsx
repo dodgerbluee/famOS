@@ -1,25 +1,7 @@
-import { useEffect, useState } from 'react';
-import { api } from '../../api/client';
+import { useState } from 'react';
+import { api, type VikunjaStatus } from '../../api/client';
+import { useQuery } from '../../lib/query';
 import { formatDate, useTimezone } from '../../lib/timezone';
-
-interface VikunjaTask {
-  id: number;
-  title: string;
-  description?: string;
-  done: boolean;
-  priority: number;
-  dueDate?: string;
-  createdAt?: string;
-  projectName?: string;
-}
-
-interface VikunjaStatus {
-  total: number;
-  overdue: number;
-  dueToday: number;
-  highPrio: number;
-  tasks: VikunjaTask[];
-}
 
 interface VikunjaWidgetProps {
   compact?: boolean;
@@ -34,16 +16,13 @@ const PRIORITY_LABELS: Record<number, { label: string; color: string }> = {
 };
 
 export function VikunjaWidget({ compact }: VikunjaWidgetProps) {
-  const [status, setStatus] = useState<VikunjaStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: status, error: queryError } = useQuery<VikunjaStatus>(
+    '/api/vikunja/tasks',
+    () => api.get<VikunjaStatus>('/api/vikunja/tasks'),
+  );
+  const error = queryError?.message ?? null;
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const timezone = useTimezone();
-
-  useEffect(() => {
-    api.get<VikunjaStatus>('/api/vikunja/tasks')
-      .then(setStatus)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
-  }, []);
 
   if (error) {
     return (

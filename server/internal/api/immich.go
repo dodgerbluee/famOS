@@ -32,7 +32,8 @@ func (h *ImmichHandler) GetAlbum(w http.ResponseWriter, r *http.Request) {
 
 func (h *ImmichHandler) ProxyAsset(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	body, contentType, err := h.svc.ProxyAsset(r.Context(), id)
+	size := r.URL.Query().Get("size")
+	body, contentType, err := h.svc.ProxyAsset(r.Context(), id, size)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return

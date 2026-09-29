@@ -33,6 +33,19 @@ export const CARD_MIN_SIZES: Record<string, { minCol: number; minRow: number }> 
   weather: { minCol: 1, minRow: 1 },
 };
 
+export const SIMPLE_KIOSK_LAYOUT: DashboardLayout = {
+  mode: 'fill',
+  totalRows: DEFAULT_TOTAL_ROWS,
+  version: GRID_GRANULARITY,
+  cards: [
+    { id: 'briefing', col: 1, row: 1, colSpan: 24, rowSpan: 4 },
+    { id: 'day-calendar', col: 1, row: 5, colSpan: 12, rowSpan: 12 },
+    { id: 'chores', col: 13, row: 5, colSpan: 11, rowSpan: 8 },
+    { id: 'sanders-cash', col: 13, row: 13, colSpan: 11, rowSpan: 4 },
+    { id: 'weather', col: 1, row: 17, colSpan: 24, rowSpan: 4 },
+  ],
+};
+
 export const DEFAULT_GRID_LAYOUT: DashboardLayout = {
   mode: 'fill',
   totalRows: DEFAULT_TOTAL_ROWS,

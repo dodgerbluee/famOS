@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import type { Camera } from '../../api/client';
 import { LiveStream } from './LiveStream';
 import { useCameraIntercom } from '../../hooks/useCameraIntercom';
@@ -31,12 +30,7 @@ export function CameraFullscreen({ camera, onClose }: CameraFullscreenProps) {
     useCameraIntercom(camera.name);
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-black flex flex-col"
-    >
+    <div className="fixed inset-0 z-50 bg-black flex flex-col">
       <div className="flex items-center justify-between p-4">
         <h2 className="text-white text-xl font-semibold capitalize">
           {camera.name.replace(/_/g, ' ')}
@@ -85,8 +79,10 @@ export function CameraFullscreen({ camera, onClose }: CameraFullscreenProps) {
         <LiveStream
           cameraName={camera.name}
           className="max-w-full max-h-full object-contain rounded-lg"
+          fallbackPollMs={2000}
+          snapshotHeight={720}
         />
       </div>
-    </motion.div>
+    </div>
   );
 }

@@ -14,12 +14,14 @@ import (
 type SeerrService struct {
 	db     *db.DB
 	client *http.Client
+	cache  *TTLCache[*SeerrStatus]
 }
 
 func NewSeerrService(database *db.DB) *SeerrService {
 	return &SeerrService{
 		db:     database,
 		client: &http.Client{Timeout: 10 * time.Second},
+		cache:  NewTTLCache[*SeerrStatus](20 * time.Second),
 	}
 }
 
@@ -74,6 +76,10 @@ type SeerrStatus struct {
 }
 
 func (s *SeerrService) GetRequests(ctx context.Context) (*SeerrStatus, error) {
+	if cached, ok := s.cache.Get(); ok {
+		return cached, nil
+	}
+
 	cfg, err := s.getConfig()
 	if err != nil {
 		return nil, err
@@ -104,11 +110,13 @@ func (s *SeerrService) GetRequests(ctx context.Context) (*SeerrStatus, error) {
 		})
 	}
 
-	return &SeerrStatus{
+	status := &SeerrStatus{
 		Pending:      pendingResp.PageInfo.Results,
 		Approved:     approvedCount,
 		PendingItems: items,
-	}, nil
+	}
+	s.cache.Set(status)
+	return status, nil
 }
 
 func (s *SeerrService) fetchCount(ctx context.Context, cfg *SeerrConfig, filter string) (int, error) {

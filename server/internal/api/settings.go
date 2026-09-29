@@ -20,10 +20,18 @@ type SettingsHandler struct {
 }
 
 func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.db.Query("SELECT key, value FROM app_settings")
+	settings, err := loadSettingsMap(h.db, h.currency)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func loadSettingsMap(database *db.DB, currency *service.CurrencyService) (map[string]string, error) {
+	rows, err := database.Query("SELECT key, value FROM app_settings")
+	if err != nil {
+		return nil, err
 	}
 	settings := map[string]string{}
 	for rows.Next() {
@@ -43,14 +51,14 @@ func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	rows.Close()
 
 	var familyName string
-	h.db.QueryRow(`SELECT name FROM families LIMIT 1`).Scan(&familyName)
+	database.QueryRow(`SELECT name FROM families LIMIT 1`).Scan(&familyName)
 	settings["family_name"] = familyName
 
-	if h.currency != nil {
-		settings["currency_name_resolved"] = h.currency.GetCurrencyName()
+	if currency != nil {
+		settings["currency_name_resolved"] = currency.GetCurrencyName()
 	}
 
-	writeJSON(w, http.StatusOK, settings)
+	return settings, nil
 }
 
 func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {

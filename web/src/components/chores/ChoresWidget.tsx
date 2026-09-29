@@ -1,21 +1,15 @@
-import { useEffect, useState, useCallback } from 'react';
 import { api, type ChoreTemplate, type FamilyMember } from '../../api/client';
-import { useWebSocket } from '../../hooks/useWebSocket';
+import { useQuery } from '../../lib/query';
 
 export function ChoresWidget() {
-  const [templates, setTemplates] = useState<ChoreTemplate[]>([]);
-  const [members, setMembers] = useState<FamilyMember[]>([]);
-
-  const load = useCallback(() => {
-    api.get<ChoreTemplate[]>('/api/chore-templates').then(setTemplates).catch(() => {});
-    api.get<FamilyMember[]>('/api/family').then(setMembers).catch(() => {});
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  useWebSocket((msg) => {
-    if (msg.type === 'chore_templates_updated') load();
-  });
+  const { data: templates = [], refetch: refetchTemplates } = useQuery<ChoreTemplate[]>(
+    '/api/chore-templates',
+    () => api.get<ChoreTemplate[]>('/api/chore-templates'),
+  );
+  const { data: members = [] } = useQuery<FamilyMember[]>(
+    '/api/family',
+    () => api.get<FamilyMember[]>('/api/family'),
+  );
 
   const kids = members.filter((m) => m.role === 'kid');
   const visible = templates.filter((t) =>
@@ -39,7 +33,7 @@ export function ChoresWidget() {
     e.stopPropagation();
     if (!taskId) return;
     const path = done ? `/api/tasks/${taskId}/uncomplete` : `/api/tasks/${taskId}/complete`;
-    api.post(path, {}).then(() => load()).catch(() => {});
+    api.post(path, {}).then(() => refetchTemplates()).catch(() => {});
   };
 
   if (visible.length === 0) {

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { NavBar } from './NavBar';
+import { NavBar, NavRail } from './NavBar';
 import { useAuth } from '../../contexts/AuthContext';
 
 export interface ShellContext {
@@ -29,7 +29,9 @@ export function Shell() {
   }, [menuOpen]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full">
+      <NavRail />
+      <div className="flex flex-col h-full flex-1 min-w-0">
       {user && (
         <header className="sticky top-2 md:top-4 z-50 px-2 md:px-4 flex justify-center mb-2">
           <div className="w-full h-[45px] bg-surface rounded-2xl border border-surface-lighter shadow-lg px-5 flex items-center justify-between">
@@ -107,7 +109,8 @@ export function Shell() {
           <Outlet context={{ editing, setEditing } satisfies ShellContext} />
         </div>
       </main>
-      <NavBar />
+      <NavBar className="md:hidden" />
+      </div>
     </div>
   );
 }

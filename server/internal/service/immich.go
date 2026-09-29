@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sandershome/server/internal/db"
@@ -16,6 +17,10 @@ import (
 type ImmichService struct {
 	db     *db.DB
 	client *http.Client
+
+	albumMu       sync.Mutex
+	albumCache    []ImmichAsset
+	albumCachedAt time.Time
 }
 
 func NewImmichService(database *db.DB) *ImmichService {
@@ -64,6 +69,14 @@ type searchResponse struct {
 }
 
 func (s *ImmichService) GetAlbumPhotos(ctx context.Context) ([]ImmichAsset, error) {
+	s.albumMu.Lock()
+	if s.albumCache != nil && time.Since(s.albumCachedAt) < time.Hour {
+		photos := s.albumCache
+		s.albumMu.Unlock()
+		return photos, nil
+	}
+	s.albumMu.Unlock()
+
 	cfg, err := s.getConfig()
 	if err != nil {
 		return nil, err
@@ -126,6 +139,11 @@ func (s *ImmichService) GetAlbumPhotos(ctx context.Context) ([]ImmichAsset, erro
 			break
 		}
 	}
+
+	s.albumMu.Lock()
+	s.albumCache = photos
+	s.albumCachedAt = time.Now()
+	s.albumMu.Unlock()
 
 	return photos, nil
 }
@@ -200,14 +218,20 @@ func (s *ImmichService) TestConnection(ctx context.Context) TestResult {
 	}
 }
 
-func (s *ImmichService) ProxyAsset(ctx context.Context, assetID string) (io.ReadCloser, string, error) {
+func (s *ImmichService) ProxyAsset(ctx context.Context, assetID, size string) (io.ReadCloser, string, error) {
 	cfg, err := s.getConfig()
 	if err != nil {
 		return nil, "", err
 	}
 
+	switch size {
+	case "thumbnail", "preview":
+	default:
+		size = "preview"
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		cfg.URL+"/api/assets/"+assetID+"/thumbnail?size=preview", nil)
+		cfg.URL+"/api/assets/"+assetID+"/thumbnail?size="+size, nil)
 	if err != nil {
 		return nil, "", err
 	}

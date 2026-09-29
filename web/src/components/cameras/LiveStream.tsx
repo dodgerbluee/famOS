@@ -1,17 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
+import { useStreamPaused } from '../../hooks/useStreamPaused';
+import { cameraSnapshotUrl } from '../../api/client';
 
 interface LiveStreamProps {
   cameraName: string;
   className?: string;
+  fallbackPollMs?: number;
+  snapshotHeight?: number;
 }
 
-export function LiveStream({ cameraName, className = '' }: LiveStreamProps) {
+export function LiveStream({ cameraName, className = '', fallbackPollMs = 2000, snapshotHeight = 720 }: LiveStreamProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [useFallback, setUseFallback] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [liveReady, setLiveReady] = useState(false);
+  const paused = useStreamPaused();
 
   useEffect(() => {
-    if (useFallback) return;
+    if (useFallback || paused) return;
 
     const video = videoRef.current;
     if (!video) return;
@@ -93,6 +99,7 @@ export function LiveStream({ cameraName, className = '' }: LiveStreamProps) {
       if (video.paused && video.readyState >= 2) {
         video.play().catch(() => {});
       }
+      if (video.readyState >= 2) setLiveReady(true);
       if (video.buffered.length > 0) {
         const end = video.buffered.end(video.buffered.length - 1);
         if (end - video.currentTime > 3) {
@@ -109,20 +116,21 @@ export function LiveStream({ cameraName, className = '' }: LiveStreamProps) {
         try { ms.endOfStream(); } catch { /* ignore */ }
       }
       URL.revokeObjectURL(video.src);
+      setLiveReady(false);
     };
-  }, [cameraName, useFallback]);
+  }, [cameraName, useFallback, paused]);
 
   useEffect(() => {
-    if (!useFallback) return;
-    const interval = setInterval(() => setRefreshKey((k) => k + 1), 2000);
+    if (!useFallback && !paused) return;
+    const interval = setInterval(() => setRefreshKey((k) => k + 1), fallbackPollMs);
     return () => clearInterval(interval);
-  }, [useFallback]);
+  }, [useFallback, paused, fallbackPollMs]);
 
-  if (useFallback) {
+  if (useFallback || paused) {
     return (
       <img
         key={refreshKey}
-        src={`/api/cameras/${cameraName}/snapshot?t=${refreshKey}`}
+        src={`${cameraSnapshotUrl(cameraName, snapshotHeight)}&t=${refreshKey}`}
         alt={cameraName}
         className={className}
       />
@@ -130,12 +138,21 @@ export function LiveStream({ cameraName, className = '' }: LiveStreamProps) {
   }
 
   return (
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      muted
-      className={className}
-    />
+    <>
+      {!liveReady && (
+        <img
+          src={cameraSnapshotUrl(cameraName, snapshotHeight)}
+          alt={cameraName}
+          className={className}
+        />
+      )}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className={`${className} ${liveReady ? '' : 'hidden'}`}
+      />
+    </>
   );
 }

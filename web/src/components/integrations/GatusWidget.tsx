@@ -1,19 +1,6 @@
-import { useEffect, useState } from 'react';
-import { api } from '../../api/client';
-
-interface GatusServiceSummary {
-  name: string;
-  group: string;
-  status: 'healthy' | 'unstable' | 'failing';
-}
-
-interface GatusStatus {
-  total: number;
-  healthy: number;
-  unstable: number;
-  failing: number;
-  services: GatusServiceSummary[];
-}
+import { useState } from 'react';
+import { api, type GatusStatus } from '../../api/client';
+import { useQuery } from '../../lib/query';
 
 interface GatusWidgetProps {
   compact?: boolean;
@@ -32,15 +19,12 @@ const DOT_COLOR = {
 } as const;
 
 export function GatusWidget({ compact }: GatusWidgetProps) {
-  const [status, setStatus] = useState<GatusStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: status, error: queryError } = useQuery<GatusStatus>(
+    '/api/gatus/status',
+    () => api.get<GatusStatus>('/api/gatus/status'),
+  );
   const [expanded, setExpanded] = useState(false);
-
-  useEffect(() => {
-    api.get<GatusStatus>('/api/gatus/status')
-      .then(setStatus)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
-  }, []);
+  const error = queryError?.message ?? null;
 
   if (error) {
     return (

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
-import { api } from '../api/client';
+import { api, setUnauthorizedHandler } from '../api/client';
 
 export interface AuthUser {
   memberId: string;
@@ -44,6 +44,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .catch(() => {})
       )
       .finally(() => setLoading(false));
+  }, [assignUser]);
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => assignUser(null));
+    return () => setUnauthorizedHandler(null);
   }, [assignUser]);
 
   const login = useCallback(async (username: string, password: string) => {

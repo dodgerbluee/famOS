@@ -51,7 +51,7 @@ export function Login() {
     <div className="min-h-screen bg-bg flex items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-text-bright">SandersHome</h1>
+          <h1 className="text-3xl font-bold text-text-bright">famOS</h1>
           <p className="text-text-dim mt-2">Sign in to continue</p>
         </div>
 
