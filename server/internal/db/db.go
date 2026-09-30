@@ -72,6 +72,7 @@ func (d *DB) Migrate() error {
 	addColumnIfNotExists(d, "calendar_events", "exception_dates", "TEXT DEFAULT ''")
 	addColumnIfNotExists(d, "calendar_events", "recurrence_dates", "TEXT DEFAULT ''")
 	addColumnIfNotExists(d, "calendar_events", "status", "TEXT DEFAULT ''")
+	addColumnIfNotExists(d, "calendar_events", "recurrence_range", "TEXT DEFAULT ''")
 	d.Exec(`DELETE FROM calendar_sources WHERE type = 'local'`)
 
 	// Auth system migrations
@@ -386,6 +387,7 @@ CREATE TABLE IF NOT EXISTS calendar_events (
 	exception_dates TEXT DEFAULT '',
 	recurrence_dates TEXT DEFAULT '',
 	status TEXT DEFAULT '',
+	recurrence_range TEXT DEFAULT '',
 	ai_enrichment TEXT DEFAULT '',
 	synced_at DATETIME,
 	UNIQUE(source_id, external_id)

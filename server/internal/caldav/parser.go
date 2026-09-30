@@ -19,6 +19,7 @@ type ParsedEvent struct {
 	AllDay          bool
 	RecurrenceRule  string
 	RecurrenceID    time.Time
+	RecurrenceRange string
 	ExceptionDates  []time.Time
 	RecurrenceDates []time.Time
 	Status          string
@@ -35,12 +36,16 @@ func ParseICS(data string, loc *time.Location) ([]ParsedEvent, error) {
 			break
 		}
 
+		method, _ := cal.Props.Text(ical.PropMethod)
 		for _, component := range cal.Children {
 			if component.Name != ical.CompEvent {
 				continue
 			}
 
 			parsed := parsedFromICalEvent(ical.Event{Component: component}, loc)
+			if isCancelMethod(method) && !isCancelled(parsed.Status) {
+				parsed.Status = "CANCELLED"
+			}
 			if parsed.UID != "" && !parsed.StartAt.IsZero() {
 				events = append(events, parsed)
 			}
@@ -85,6 +90,9 @@ func parsedFromICalEvent(ev ical.Event, loc *time.Location) ParsedEvent {
 	if recIDProp := ev.Props.Get(ical.PropRecurrenceID); recIDProp != nil {
 		if t, err := recIDProp.DateTime(loc); err == nil {
 			parsed.RecurrenceID = t
+		}
+		if rangeParam := recIDProp.Params.Get("RANGE"); rangeParam != "" {
+			parsed.RecurrenceRange = rangeParam
 		}
 	}
 
@@ -131,4 +139,8 @@ func EventExternalID(ev ParsedEvent) string {
 		return ev.UID + "/" + ev.RecurrenceID.UTC().Format("20060102T150405Z")
 	}
 	return ev.UID
+}
+
+func isCancelMethod(method string) bool {
+	return strings.EqualFold(strings.TrimSpace(method), "CANCEL")
 }

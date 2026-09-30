@@ -46,6 +46,82 @@ END:VCALENDAR
 	}
 }
 
+func TestParseICS_CancelledSchoolDaysAndMethodCancel(t *testing.T) {
+	chicago, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ics := `BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:school-days
+DTSTART;VALUE=DATE:20250825
+DTEND;VALUE=DATE:20250826
+RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR
+STATUS:CANCELLED
+SUMMARY:Kids School
+END:VEVENT
+BEGIN:VEVENT
+UID:school-days
+DTSTART;VALUE=DATE:20260929
+DTEND;VALUE=DATE:20260930
+RECURRENCE-ID;VALUE=DATE:20260929
+STATUS:CANCELLED
+SUMMARY:Kids School
+END:VEVENT
+BEGIN:VEVENT
+UID:school-days
+DTSTART;VALUE=DATE:20260930
+DTEND;VALUE=DATE:20261001
+RECURRENCE-ID;RANGE=THISANDFUTURE;VALUE=DATE:20260930
+STATUS:CANCELLED
+SUMMARY:Kids School
+END:VEVENT
+END:VCALENDAR
+`
+	events, err := ParseICS(ics, chicago)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("expected 3 VEVENTs, got %d", len(events))
+	}
+	if !isCancelled(events[0].Status) || events[0].RecurrenceRule == "" {
+		t.Fatalf("cancelled master: %+v", events[0])
+	}
+	if events[1].RecurrenceID.IsZero() || !isCancelled(events[1].Status) {
+		t.Fatalf("cancelled instance: %+v", events[1])
+	}
+	if events[2].RecurrenceRange != "THISANDFUTURE" {
+		t.Fatalf("RANGE: %q", events[2].RecurrenceRange)
+	}
+
+	methodICS := `BEGIN:VCALENDAR
+VERSION:2.0
+METHOD:CANCEL
+BEGIN:VEVENT
+UID:old-school
+DTSTART;VALUE=DATE:20250825
+DTEND;VALUE=DATE:20250826
+RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR
+SUMMARY:Kids School
+END:VEVENT
+END:VCALENDAR
+`
+	cancelled, err := ParseICS(methodICS, chicago)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cancelled) != 1 || !isCancelled(cancelled[0].Status) {
+		t.Fatalf("METHOD:CANCEL should mark STATUS:CANCELLED, got %+v", cancelled)
+	}
+
+	got := Expand(events[:1], time.Date(2026, 9, 28, 0, 0, 0, 0, chicago), time.Date(2026, 10, 5, 0, 0, 0, 0, chicago))
+	if len(got) != 0 {
+		t.Fatalf("parsed cancelled master still expanded: %+v", summaries(got))
+	}
+}
+
 func TestParseICS_RecurrenceIDGetsDistinctExternalID(t *testing.T) {
 	chicago, err := time.LoadLocation("America/Chicago")
 	if err != nil {
