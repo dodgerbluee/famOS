@@ -167,6 +167,188 @@ func TestGetEvents_OneOffStillReturnedByOverlap(t *testing.T) {
 	}
 }
 
+func TestGetEvents_CancelledWeeklySchoolDaysHidden(t *testing.T) {
+	svc, database, chicago := setupCalendarTest(t)
+	sourceID := insertSource(t, database)
+
+	if err := svc.upsertEvent(sourceID, caldav.ParsedEvent{
+		UID:            "school-days",
+		Summary:        "Kids School",
+		AllDay:         true,
+		StartAt:        time.Date(2025, 8, 25, 0, 0, 0, 0, chicago),
+		EndAt:          time.Date(2025, 8, 26, 0, 0, 0, 0, chicago),
+		RecurrenceRule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+		Status:         "CANCELLED",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := svc.GetEvents(
+		time.Date(2026, 9, 28, 0, 0, 0, 0, chicago),
+		time.Date(2026, 10, 5, 0, 0, 0, 0, chicago),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("cancelled school days still showing: %+v", events)
+	}
+}
+
+func TestGetEvents_CancelledInstanceAndThisAndFutureSchoolDays(t *testing.T) {
+	svc, database, chicago := setupCalendarTest(t)
+	sourceID := insertSource(t, database)
+
+	if err := svc.upsertEvent(sourceID, caldav.ParsedEvent{
+		UID:            "school-days",
+		Summary:        "Kids School",
+		AllDay:         true,
+		StartAt:        time.Date(2026, 8, 31, 0, 0, 0, 0, chicago),
+		EndAt:          time.Date(2026, 9, 1, 0, 0, 0, 0, chicago),
+		RecurrenceRule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.upsertEvent(sourceID, caldav.ParsedEvent{
+		UID:          "school-days",
+		Summary:      "Kids School",
+		AllDay:       true,
+		StartAt:      time.Date(2026, 9, 29, 0, 0, 0, 0, time.UTC),
+		EndAt:        time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC),
+		RecurrenceID: time.Date(2026, 9, 29, 0, 0, 0, 0, time.UTC),
+		Status:       "CANCELLED",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	week, err := svc.GetEvents(
+		time.Date(2026, 9, 28, 0, 0, 0, 0, chicago),
+		time.Date(2026, 10, 3, 0, 0, 0, 0, chicago),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range week {
+		start := parseStoredTime(ev.StartAt, chicago)
+		if start.Weekday() == time.Tuesday {
+			t.Fatalf("cancelled Tuesday still showing: %+v", ev)
+		}
+	}
+
+	if err := svc.upsertEvent(sourceID, caldav.ParsedEvent{
+		UID:             "school-days",
+		Summary:         "Kids School",
+		AllDay:          true,
+		StartAt:         time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC),
+		EndAt:           time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
+		RecurrenceID:    time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC),
+		RecurrenceRange: "THISANDFUTURE",
+		Status:          "CANCELLED",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rest, err := svc.GetEvents(
+		time.Date(2026, 9, 28, 0, 0, 0, 0, chicago),
+		time.Date(2026, 10, 3, 0, 0, 0, 0, chicago),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rest) != 1 {
+		t.Fatalf("expected only Monday after THISANDFUTURE (Tuesday already cancelled), got %d: %+v", len(rest), rest)
+	}
+}
+
+func TestPruneMissingEvents_RemovesCancelledSeriesGoneFromFeed(t *testing.T) {
+	svc, database, chicago := setupCalendarTest(t)
+	sourceID := insertSource(t, database)
+
+	if err := svc.upsertEvent(sourceID, caldav.ParsedEvent{
+		UID:            "old-school",
+		Summary:        "Kids School",
+		AllDay:         true,
+		StartAt:        time.Date(2025, 8, 25, 0, 0, 0, 0, chicago),
+		EndAt:          time.Date(2025, 8, 26, 0, 0, 0, 0, chicago),
+		RecurrenceRule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.upsertEvent(sourceID, caldav.ParsedEvent{
+		UID:     "dentist",
+		Summary: "Dentist",
+		StartAt: time.Date(2026, 9, 30, 9, 0, 0, 0, chicago),
+		EndAt:   time.Date(2026, 9, 30, 10, 0, 0, 0, chicago),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.pruneMissingEvents(sourceID, []string{"dentist"}); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := svc.GetEvents(
+		time.Date(2026, 9, 28, 0, 0, 0, 0, chicago),
+		time.Date(2026, 10, 5, 0, 0, 0, 0, chicago),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Title != "Dentist" {
+		t.Fatalf("stale cancelled series should be pruned, got %+v", events)
+	}
+}
+
+func TestGetEvents_ICSCancelledSchoolDayInstanceRoundTrip(t *testing.T) {
+	svc, database, chicago := setupCalendarTest(t)
+	sourceID := insertSource(t, database)
+
+	ics := `BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:school-days
+DTSTART;VALUE=DATE:20260831
+DTEND;VALUE=DATE:20260901
+RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR
+SUMMARY:Kids School
+END:VEVENT
+BEGIN:VEVENT
+UID:school-days
+DTSTART;VALUE=DATE:20260929
+DTEND;VALUE=DATE:20260930
+RECURRENCE-ID;VALUE=DATE:20260929
+STATUS:CANCELLED
+SUMMARY:Kids School
+END:VEVENT
+END:VCALENDAR
+`
+	parsed, err := caldav.ParseICS(ics, chicago)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range parsed {
+		if err := svc.upsertEvent(sourceID, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	events, err := svc.GetEvents(
+		time.Date(2026, 9, 28, 0, 0, 0, 0, chicago),
+		time.Date(2026, 10, 3, 0, 0, 0, 0, chicago),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range events {
+		start := parseStoredTime(ev.StartAt, chicago)
+		if start.Weekday() == time.Tuesday {
+			t.Fatalf("ICS cancelled Tuesday still showing: %+v", ev)
+		}
+	}
+	if len(events) != 4 {
+		t.Fatalf("expected Mon/Wed/Thu/Fri, got %d: %+v", len(events), events)
+	}
+}
+
 func TestUpsertEvent_ExceptionDoesNotOverwriteMaster(t *testing.T) {
 	svc, database, chicago := setupCalendarTest(t)
 	sourceID := insertSource(t, database)

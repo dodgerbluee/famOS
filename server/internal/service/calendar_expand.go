@@ -12,6 +12,7 @@ type storedCalendarEvent struct {
 	CalendarEvent
 	UID             string
 	RecurrenceID    time.Time
+	RecurrenceRange string
 	ExceptionDates  []time.Time
 	RecurrenceDates []time.Time
 	Status          string
@@ -49,6 +50,16 @@ func (s *CalendarService) expandStoredEvents(rows []storedCalendarEvent, from, t
 func toParsedEvent(row storedCalendarEvent, loc *time.Location) caldav.ParsedEvent {
 	start := parseStoredTime(row.StartAt, loc)
 	end := parseStoredTime(row.EndAt, loc)
+	recID := inLocation(row.RecurrenceID, loc)
+	exDates := inLocations(row.ExceptionDates, loc)
+	rDates := inLocations(row.RecurrenceDates, loc)
+	if row.AllDay {
+		start = civilDateIn(start, loc)
+		end = civilDateIn(end, loc)
+		recID = civilDateIn(recID, loc)
+		exDates = civilDatesIn(exDates, loc)
+		rDates = civilDatesIn(rDates, loc)
+	}
 	uid := row.UID
 	if uid == "" {
 		uid = masterUID(row.ExternalID)
@@ -65,9 +76,10 @@ func toParsedEvent(row storedCalendarEvent, loc *time.Location) caldav.ParsedEve
 		EndAt:           end,
 		AllDay:          row.AllDay,
 		RecurrenceRule:  row.RecurrenceRule,
-		RecurrenceID:    inLocation(row.RecurrenceID, loc),
-		ExceptionDates:  inLocations(row.ExceptionDates, loc),
-		RecurrenceDates: inLocations(row.RecurrenceDates, loc),
+		RecurrenceID:    recID,
+		RecurrenceRange: row.RecurrenceRange,
+		ExceptionDates:  exDates,
+		RecurrenceDates: rDates,
 		Status:          row.Status,
 	}
 }
@@ -123,6 +135,34 @@ func inLocation(t time.Time, loc *time.Location) time.Time {
 		return t
 	}
 	return t.In(loc)
+}
+
+// civilDateIn keeps VALUE=DATE / UTC-midnight stamps on the intended calendar
+// day instead of shifting them to the previous local evening.
+func civilDateIn(t time.Time, loc *time.Location) time.Time {
+	if t.IsZero() {
+		return t
+	}
+	if loc == nil {
+		loc = time.UTC
+	}
+	u := t.UTC()
+	if u.Hour() == 0 && u.Minute() == 0 && u.Second() == 0 && u.Nanosecond() == 0 {
+		y, m, d := u.Date()
+		return time.Date(y, m, d, 0, 0, 0, 0, loc)
+	}
+	return inLocation(t, loc)
+}
+
+func civilDatesIn(times []time.Time, loc *time.Location) []time.Time {
+	if len(times) == 0 {
+		return times
+	}
+	out := make([]time.Time, len(times))
+	for i, t := range times {
+		out[i] = civilDateIn(t, loc)
+	}
+	return out
 }
 
 func inLocations(times []time.Time, loc *time.Location) []time.Time {

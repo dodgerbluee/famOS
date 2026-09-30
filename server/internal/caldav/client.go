@@ -79,25 +79,33 @@ func (c *CalDAVClient) FetchCalDAV(ctx context.Context, endpoint, username, pass
 	}
 
 	var allEvents []ParsedEvent
+	var queried bool
+	var queryErr error
 	for _, cp := range paths {
 		meta, _ := c.getCalendarMetadata(ctx, authClient, endpoint, cp.path)
 
 		objects, err := client.QueryCalendar(ctx, cp.path, query)
 		if err != nil {
 			log.Printf("query calendar %s: %v", cp.name, err)
+			queryErr = err
 			continue
 		}
+		queried = true
 
 		for _, obj := range objects {
 			if obj.Data == nil {
 				continue
 			}
+			method, _ := obj.Data.Props.Text(ical.PropMethod)
 			for _, comp := range obj.Data.Children {
 				if comp.Name != ical.CompEvent {
 					continue
 				}
 				ev := ical.Event{Component: comp}
 				parsed := parsedFromICalEvent(ev, c.location)
+				if isCancelMethod(method) && !isCancelled(parsed.Status) {
+					parsed.Status = "CANCELLED"
+				}
 				parsed.CalendarName = firstNonEmptyCalendar(meta.Name, cp.name, sourceName)
 				parsed.CalendarColor = meta.Color
 				if parsed.UID != "" && !parsed.StartAt.IsZero() {
@@ -105,6 +113,13 @@ func (c *CalDAVClient) FetchCalDAV(ctx context.Context, endpoint, username, pass
 				}
 			}
 		}
+	}
+
+	if !queried {
+		if queryErr != nil {
+			return nil, queryErr
+		}
+		return nil, fmt.Errorf("no calendars queried")
 	}
 
 	return allEvents, nil

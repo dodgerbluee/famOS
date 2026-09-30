@@ -216,7 +216,8 @@ func (s *CalendarService) GetEvents(start, end time.Time) ([]CalendarEvent, erro
 		       COALESCE(NULLIF(e.calendar_name, ''), cs.calendar_name),
 		       COALESCE(NULLIF(e.calendar_color, ''), cs.color),
 		       COALESCE(e.recurrence_id, ''), COALESCE(e.exception_dates, ''),
-		       COALESCE(e.recurrence_dates, ''), COALESCE(e.status, '')
+		       COALESCE(e.recurrence_dates, ''), COALESCE(e.status, ''),
+		       COALESCE(e.recurrence_range, '')
 		FROM calendar_events e
 		JOIN calendar_sources cs ON cs.id = e.source_id
 		ORDER BY e.start_at
@@ -229,11 +230,11 @@ func (s *CalendarService) GetEvents(start, end time.Time) ([]CalendarEvent, erro
 	var stored []storedCalendarEvent
 	for rows.Next() {
 		var ev storedCalendarEvent
-		var recID, exDates, rDates, status string
+		var recID, exDates, rDates, status, recRange string
 		if err := rows.Scan(&ev.ID, &ev.SourceID, &ev.ExternalID, &ev.Title, &ev.Description,
 			&ev.Location, &ev.StartAt, &ev.EndAt, &ev.AllDay, &ev.RecurrenceRule,
 			&ev.AIEnrichment, &ev.SourceColor, &ev.SourceName, &ev.SourceCalendarName, &ev.SourceCalendarColor,
-			&recID, &exDates, &rDates, &status); err != nil {
+			&recID, &exDates, &rDates, &status, &recRange); err != nil {
 			return nil, err
 		}
 		ev.UID = masterUID(ev.ExternalID)
@@ -241,6 +242,7 @@ func (s *CalendarService) GetEvents(start, end time.Time) ([]CalendarEvent, erro
 		ev.ExceptionDates = decodeTimes(exDates, s.location)
 		ev.RecurrenceDates = decodeTimes(rDates, s.location)
 		ev.Status = status
+		ev.RecurrenceRange = recRange
 		stored = append(stored, ev)
 	}
 	if err := rows.Err(); err != nil {
@@ -281,13 +283,18 @@ func (s *CalendarService) SyncSource(ctx context.Context, sourceID string) (int,
 	if src.Type == "caldav" {
 		_ = s.syncResolvedCalendarMetadata(sourceID, src.URL, src.Username, src.Password, src.CalendarName, src.Name)
 	}
+	seen := make([]string, 0, len(events))
 	for _, ev := range events {
 		err := s.upsertEvent(sourceID, ev)
 		if err != nil {
 			log.Printf("upsert event %s: %v", ev.UID, err)
 			continue
 		}
+		seen = append(seen, caldav.EventExternalID(ev))
 		count++
+	}
+	if err := s.pruneMissingEvents(sourceID, seen); err != nil {
+		log.Printf("prune events for source %s: %v", sourceID, err)
 	}
 
 	if _, err := s.db.Exec(`UPDATE calendar_sources SET last_synced_at = CURRENT_TIMESTAMP WHERE id = ?`, sourceID); err != nil {
@@ -315,12 +322,12 @@ func (s *CalendarService) upsertEvent(sourceID string, ev caldav.ParsedEvent) er
 		id := uuid.New().String()
 		_, err = s.db.Exec(`
 			INSERT INTO calendar_events (id, source_id, external_id, calendar_name, calendar_color, title, description, location,
-				start_at, end_at, all_day, recurrence_rule, recurrence_id, exception_dates, recurrence_dates, status, synced_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+				start_at, end_at, all_day, recurrence_rule, recurrence_id, exception_dates, recurrence_dates, status, recurrence_range, synced_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		`, id, sourceID, externalID, ev.CalendarName, ev.CalendarColor, ev.Summary, ev.Description, ev.Location,
 			ev.StartAt.Format(time.RFC3339), endAt.Format(time.RFC3339),
 			ev.AllDay, ev.RecurrenceRule, encodeRecurrenceID(ev.RecurrenceID),
-			encodeTimes(ev.ExceptionDates), encodeTimes(ev.RecurrenceDates), ev.Status)
+			encodeTimes(ev.ExceptionDates), encodeTimes(ev.RecurrenceDates), ev.Status, ev.RecurrenceRange)
 		return err
 	}
 	if err != nil {
@@ -330,12 +337,32 @@ func (s *CalendarService) upsertEvent(sourceID string, ev caldav.ParsedEvent) er
 	_, err = s.db.Exec(`
 		UPDATE calendar_events SET calendar_name = ?, calendar_color = ?, title = ?, description = ?, location = ?,
 			start_at = ?, end_at = ?, all_day = ?, recurrence_rule = ?, recurrence_id = ?, exception_dates = ?,
-			recurrence_dates = ?, status = ?, synced_at = CURRENT_TIMESTAMP
+			recurrence_dates = ?, status = ?, recurrence_range = ?, synced_at = CURRENT_TIMESTAMP
 		WHERE id = ?
 	`, ev.CalendarName, ev.CalendarColor, ev.Summary, ev.Description, ev.Location,
 		ev.StartAt.Format(time.RFC3339), endAt.Format(time.RFC3339),
 		ev.AllDay, ev.RecurrenceRule, encodeRecurrenceID(ev.RecurrenceID),
-		encodeTimes(ev.ExceptionDates), encodeTimes(ev.RecurrenceDates), ev.Status, existingID)
+		encodeTimes(ev.ExceptionDates), encodeTimes(ev.RecurrenceDates), ev.Status, ev.RecurrenceRange, existingID)
+	return err
+}
+
+func (s *CalendarService) pruneMissingEvents(sourceID string, seen []string) error {
+	if len(seen) == 0 {
+		_, err := s.db.Exec(`DELETE FROM calendar_events WHERE source_id = ? AND synced_at IS NOT NULL`, sourceID)
+		return err
+	}
+
+	placeholders := make([]string, len(seen))
+	args := make([]any, 0, len(seen)+1)
+	args = append(args, sourceID)
+	for i, id := range seen {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	_, err := s.db.Exec(
+		`DELETE FROM calendar_events WHERE source_id = ? AND synced_at IS NOT NULL AND external_id NOT IN (`+strings.Join(placeholders, ",")+`)`,
+		args...,
+	)
 	return err
 }
 

@@ -129,6 +129,176 @@ func TestExpand_WeeklyByDayWhenDtStartIsNotOnThoseDays(t *testing.T) {
 	}
 }
 
+func TestExpand_CancelledWeeklySchoolDaysMasterHidden(t *testing.T) {
+	chicago, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	master := ParsedEvent{
+		UID:            "school-days",
+		Summary:        "Kids School",
+		AllDay:         true,
+		StartAt:        time.Date(2025, 8, 25, 0, 0, 0, 0, chicago),
+		EndAt:          time.Date(2025, 8, 26, 0, 0, 0, 0, chicago),
+		RecurrenceRule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+		Status:         "CANCELLED",
+	}
+	from := time.Date(2026, 9, 28, 0, 0, 0, 0, chicago)
+	to := time.Date(2026, 10, 5, 0, 0, 0, 0, chicago)
+	got := Expand([]ParsedEvent{master}, from, to)
+	if len(got) != 0 {
+		t.Fatalf("cancelled school-day series must not expand, got %d: %+v", len(got), summaries(got))
+	}
+}
+
+func TestExpand_GoogleCancelledCopyHidesConfirmedMaster(t *testing.T) {
+	chicago, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	master := ParsedEvent{
+		UID:            "school-days",
+		Summary:        "Kids School",
+		AllDay:         true,
+		StartAt:        time.Date(2025, 8, 25, 0, 0, 0, 0, chicago),
+		EndAt:          time.Date(2025, 8, 26, 0, 0, 0, 0, chicago),
+		RecurrenceRule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+		Status:         "CONFIRMED",
+	}
+	// Same UID, no RECURRENCE-ID: Google/CalDAV cancelled copy of the series.
+	cancelledCopy := ParsedEvent{
+		UID:     "school-days",
+		Summary: "Kids School",
+		AllDay:  true,
+		StartAt: time.Date(2025, 8, 25, 0, 0, 0, 0, chicago),
+		EndAt:   time.Date(2025, 8, 26, 0, 0, 0, 0, chicago),
+		Status:  "CANCELLED",
+	}
+	from := time.Date(2026, 9, 28, 0, 0, 0, 0, chicago)
+	to := time.Date(2026, 10, 5, 0, 0, 0, 0, chicago)
+	got := Expand([]ParsedEvent{master, cancelledCopy}, from, to)
+	if len(got) != 0 {
+		t.Fatalf("cancelled copy must hide the series, got %d: %+v", len(got), summaries(got))
+	}
+}
+
+func TestExpand_AllDayCancelledInstanceDateRecurrenceID(t *testing.T) {
+	chicago, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	master := ParsedEvent{
+		UID:            "school-days",
+		Summary:        "Kids School",
+		AllDay:         true,
+		StartAt:        time.Date(2026, 8, 31, 0, 0, 0, 0, chicago), // Monday
+		EndAt:          time.Date(2026, 9, 1, 0, 0, 0, 0, chicago),
+		RecurrenceRule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+	}
+	// Google all-day RECURRENCE-ID;VALUE=DATE often parses as UTC midnight.
+	cancelledTue := ParsedEvent{
+		UID:          "school-days",
+		Summary:      "Kids School",
+		AllDay:       true,
+		StartAt:      time.Date(2026, 9, 29, 0, 0, 0, 0, time.UTC),
+		EndAt:        time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC),
+		RecurrenceID: time.Date(2026, 9, 29, 0, 0, 0, 0, time.UTC),
+		Status:       "CANCELLED",
+	}
+	from := time.Date(2026, 9, 28, 0, 0, 0, 0, chicago)
+	to := time.Date(2026, 10, 3, 0, 0, 0, 0, chicago) // Mon-Fri window
+	got := Expand([]ParsedEvent{master, cancelledTue}, from, to)
+	for _, ev := range got {
+		if ev.StartAt.In(chicago).Weekday() == time.Tuesday {
+			t.Fatalf("cancelled Tuesday school day still present: %s", ev.StartAt)
+		}
+	}
+	if len(got) != 4 {
+		t.Fatalf("expected Mon/Wed/Thu/Fri, got %d: %+v", len(got), starts(got))
+	}
+}
+
+func TestExpand_AllDayExDateDateValue(t *testing.T) {
+	chicago, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	master := ParsedEvent{
+		UID:            "school-days",
+		Summary:        "Kids School",
+		AllDay:         true,
+		StartAt:        time.Date(2026, 8, 31, 0, 0, 0, 0, chicago),
+		EndAt:          time.Date(2026, 9, 1, 0, 0, 0, 0, chicago),
+		RecurrenceRule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+		ExceptionDates: []time.Time{time.Date(2026, 9, 29, 0, 0, 0, 0, time.UTC)},
+	}
+	from := time.Date(2026, 9, 28, 0, 0, 0, 0, chicago)
+	to := time.Date(2026, 10, 3, 0, 0, 0, 0, chicago)
+	got := Expand([]ParsedEvent{master}, from, to)
+	for _, ev := range got {
+		if ev.StartAt.In(chicago).Weekday() == time.Tuesday {
+			t.Fatalf("EXDATE Tuesday still present: %s", ev.StartAt)
+		}
+	}
+	if len(got) != 4 {
+		t.Fatalf("expected 4 school days after EXDATE, got %d: %+v", len(got), starts(got))
+	}
+}
+
+func TestExpand_ThisAndFutureCancelledSchoolDays(t *testing.T) {
+	chicago, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	master := ParsedEvent{
+		UID:            "school-days",
+		Summary:        "Kids School",
+		AllDay:         true,
+		StartAt:        time.Date(2026, 8, 31, 0, 0, 0, 0, chicago),
+		EndAt:          time.Date(2026, 9, 1, 0, 0, 0, 0, chicago),
+		RecurrenceRule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+	}
+	cancelledFromWed := ParsedEvent{
+		UID:             "school-days",
+		Summary:         "Kids School",
+		AllDay:          true,
+		StartAt:         time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC),
+		EndAt:           time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
+		RecurrenceID:    time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC),
+		RecurrenceRange: "THISANDFUTURE",
+		Status:          "CANCELLED",
+	}
+	from := time.Date(2026, 9, 28, 0, 0, 0, 0, chicago)
+	to := time.Date(2026, 10, 3, 0, 0, 0, 0, chicago)
+	got := Expand([]ParsedEvent{master, cancelledFromWed}, from, to)
+	if len(got) != 2 {
+		t.Fatalf("expected only Mon+Tue before THISANDFUTURE, got %d: %+v", len(got), starts(got))
+	}
+	if got[0].StartAt.In(chicago).Weekday() != time.Monday || got[1].StartAt.In(chicago).Weekday() != time.Tuesday {
+		t.Fatalf("weekdays: %s %s", got[0].StartAt, got[1].StartAt)
+	}
+}
+
+func TestExpand_CanceledAmericanSpelling(t *testing.T) {
+	chicago, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	master := ParsedEvent{
+		UID:            "school-days",
+		Summary:        "Kids School",
+		AllDay:         true,
+		StartAt:        time.Date(2025, 8, 25, 0, 0, 0, 0, chicago),
+		EndAt:          time.Date(2025, 8, 26, 0, 0, 0, 0, chicago),
+		RecurrenceRule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+		Status:         "CANCELED",
+	}
+	got := Expand([]ParsedEvent{master}, time.Date(2026, 9, 28, 0, 0, 0, 0, chicago), time.Date(2026, 10, 5, 0, 0, 0, 0, chicago))
+	if len(got) != 0 {
+		t.Fatalf("CANCELED master still expanded: %+v", summaries(got))
+	}
+}
+
 func TestExpand_OriginalOccurrenceOutsideWindowIsNotReturned(t *testing.T) {
 	chicago, err := time.LoadLocation("America/Chicago")
 	if err != nil {
