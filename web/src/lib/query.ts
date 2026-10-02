@@ -56,6 +56,36 @@ export function invalidateQueriesWithPrefix(prefix: string) {
   }
 }
 
+/** Fill a cache key without marking it fresh, so useQuery can paint immediately and still refetch. */
+export function seedQueryData<T>(key: string, data: T) {
+  const entry = getEntry(key);
+  if (entry.data !== undefined) return;
+  entry.data = data;
+  entry.error = null;
+  notify(entry);
+}
+
+export function invalidateAllQueries() {
+  for (const key of store.keys()) {
+    invalidateQuery(key);
+  }
+}
+
+const refreshListeners = new Set<() => void>();
+
+export function subscribeQueryRefresh(listener: () => void) {
+  refreshListeners.add(listener);
+  return () => {
+    refreshListeners.delete(listener);
+  };
+}
+
+/** Stale every cached query and ping non-query pages so the current view refetches in place. */
+export function refreshVisibleQueries() {
+  invalidateAllQueries();
+  refreshListeners.forEach((listener) => listener());
+}
+
 export function useQuery<T>(
   key: string | null,
   fetcher: () => Promise<T>,

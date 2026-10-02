@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import { EventCard } from './EventCard';
 import type { CalendarEvent } from '../../api/client';
 import { addDaysInTimezone, formatDate, getDateKey, useTimezone } from '../../lib/timezone';
@@ -11,10 +12,10 @@ interface DayViewProps {
   referenceTime?: Date;
 }
 
-export function DayView({ date, events, compact, onDateChange, onEventSelect, referenceTime }: DayViewProps) {
+export const DayView = memo(function DayView({ date, events, compact, onDateChange, onEventSelect, referenceTime }: DayViewProps) {
   const timezone = useTimezone();
-  const allDayEvents = events.filter((e) => e.allDay);
-  const timedEvents = events.filter((e) => !e.allDay);
+  const allDayEvents = useMemo(() => events.filter((e) => e.allDay), [events]);
+  const timedEvents = useMemo(() => events.filter((e) => !e.allDay), [events]);
 
   const prevDay = () => {
     onDateChange?.(addDaysInTimezone(date, -1, timezone));
@@ -84,4 +85,4 @@ export function DayView({ date, events, compact, onDateChange, onEventSelect, re
       )}
     </div>
   );
-}
+});

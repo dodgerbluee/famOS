@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, type CameraEvent } from '../../api/client';
+import { subscribeQueryRefresh } from '../../lib/query';
 
 interface EventTimelineProps {
   limit?: number;
@@ -9,11 +10,16 @@ export function EventTimeline({ limit = 20 }: EventTimelineProps) {
   const [events, setEvents] = useState<CameraEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api.get<CameraEvent[]>(`/api/cameras/events?limit=${limit}`)
       .then(setEvents)
       .catch((e) => setError(e.message));
   }, [limit]);
+
+  useEffect(() => {
+    load();
+    return subscribeQueryRefresh(load);
+  }, [load]);
 
   if (error) {
     return <p className="text-text-dim text-sm">{error}</p>;

@@ -1,7 +1,7 @@
 import { EventCard } from './EventCard';
 import type { CalendarEvent } from '../../api/client';
 import { eventSpansDate, getCalendarEventDateKey, getEventVisualState, isMultiDayEvent } from '../../lib/calendar';
-import { useEffect, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import { addDaysInTimezone, formatDate, formatTime, getDateKey, useTimezone } from '../../lib/timezone';
 
 interface WeekViewProps {
@@ -45,24 +45,25 @@ function assignLanes(segments: Omit<EventSegment, 'lane'>[]): EventSegment[] {
   });
 }
 
-export function WeekView({ startDate, events, onDateChange, onEventSelect, referenceTime, showHeader = true, autoScrollRelevant = false, compact = false }: WeekViewProps) {
+export const WeekView = memo(function WeekView({ startDate, events, onDateChange, onEventSelect, referenceTime, showHeader = true, autoScrollRelevant = false, compact = false }: WeekViewProps) {
   const timezone = useTimezone();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const dayRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(startDate);
+  const startMs = startDate.getTime();
+  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(startMs);
     d.setDate(d.getDate() + i);
     d.setHours(12, 0, 0, 0);
     return d;
-  });
+  }), [startMs]);
 
-  const today = getDateKey(new Date(), timezone);
-  const dayKeys = days.map((d) => getDateKey(d, timezone));
+  const today = getDateKey(referenceTime ?? new Date(), timezone);
+  const dayKeys = useMemo(() => days.map((d) => getDateKey(d, timezone)), [days, timezone]);
 
-  const multiDayEvents = events.filter((ev) => isMultiDayEvent(ev, timezone));
-  const singleDayEvents = events.filter((ev) => !isMultiDayEvent(ev, timezone));
+  const multiDayEvents = useMemo(() => events.filter((ev) => isMultiDayEvent(ev, timezone)), [events, timezone]);
+  const singleDayEvents = useMemo(() => events.filter((ev) => !isMultiDayEvent(ev, timezone)), [events, timezone]);
 
-  const segments = (() => {
+  const segments = useMemo(() => {
     const raw: Omit<EventSegment, 'lane'>[] = [];
     for (const ev of multiDayEvents) {
       let startCol = -1;
@@ -88,7 +89,7 @@ export function WeekView({ startDate, events, onDateChange, onEventSelect, refer
     }
     raw.sort((a, b) => a.startCol - b.startCol || b.span - a.span);
     return assignLanes(raw);
-  })();
+  }, [multiDayEvents, dayKeys, timezone]);
 
   const laneCount = segments.length > 0 ? Math.max(...segments.map((s) => s.lane)) + 1 : 0;
 
@@ -248,7 +249,7 @@ export function WeekView({ startDate, events, onDateChange, onEventSelect, refer
       </div>
     </div>
   );
-}
+});
 
 function WeekEventItem({ event, onSelect, referenceTime, timezone }: {
   event: CalendarEvent;

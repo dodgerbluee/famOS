@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { CalendarEvent } from '../../api/client';
 import { eventSpansDate, getCalendarEventDateKey, isMultiDayEvent } from '../../lib/calendar';
 import { addMonthsInTimezone, formatDate, formatTime, fromDateKey, getDateKey, getDateParts, useTimezone } from '../../lib/timezone';
@@ -40,7 +41,7 @@ function assignLanes(segments: Omit<EventSegment, 'lane'>[]): EventSegment[] {
   });
 }
 
-export function MonthView({ date, events, onDateChange, onDaySelect, onEventSelect }: MonthViewProps) {
+export const MonthView = memo(function MonthView({ date, events, onDateChange, onDaySelect, onEventSelect }: MonthViewProps) {
   const timezone = useTimezone();
   const { year, month } = getDateParts(date, timezone);
   const monthIndex = month - 1;
@@ -210,4 +211,4 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
       </div>
     </div>
   );
-}
+});

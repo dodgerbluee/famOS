@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useMemo, useState } from 'react';
 import { api, type CalendarEvent, type CalendarSource } from '../api/client';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { DayView } from '../components/calendar/DayView';
@@ -6,9 +6,13 @@ import { WeekView } from '../components/calendar/WeekView';
 import { MonthView } from '../components/calendar/MonthView';
 import { AddEventForm } from '../components/calendar/AddEventForm';
 import { EventDetail } from '../components/calendar/EventDetail';
+import { useCalendarEvents } from '../lib/calendarQuery';
+import { invalidateQueriesWithPrefix, useQuery } from '../lib/query';
 import { endOfDayInTimezone, endOfMonthInTimezone, endOfWeekInTimezone, formatDate, startOfDayInTimezone, startOfMonthInTimezone, startOfWeekInTimezone, todayInTimezone, useTimezone } from '../lib/timezone';
 
 type ViewMode = 'day' | 'week' | 'month';
+
+const EMPTY_EVENTS: CalendarEvent[] = [];
 
 interface SyncResult {
   sourceName: string;
@@ -16,8 +20,26 @@ interface SyncResult {
   error?: string;
 }
 
+function viewRange(currentDate: Date, viewMode: ViewMode, timezone: string) {
+  if (viewMode === 'day') {
+    return {
+      start: startOfDayInTimezone(currentDate, timezone),
+      end: endOfDayInTimezone(currentDate, timezone),
+    };
+  }
+  if (viewMode === 'week') {
+    return {
+      start: startOfWeekInTimezone(currentDate, timezone),
+      end: endOfWeekInTimezone(currentDate, timezone),
+    };
+  }
+  return {
+    start: startOfMonthInTimezone(currentDate, timezone),
+    end: endOfMonthInTimezone(currentDate, timezone),
+  };
+}
+
 export function Calendar() {
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>(() =>
     window.matchMedia('(min-width: 768px)').matches ? 'month' : 'day'
   );
@@ -26,41 +48,26 @@ export function Calendar() {
   const [syncStatus, setSyncStatus] = useState<{ results: SyncResult[]; show: boolean } | null>(null);
   const [adding, setAdding] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
-  const [sources, setSources] = useState<CalendarSource[]>([]);
   const timezone = useTimezone();
 
-  const loadEvents = useCallback(() => {
-    let start = startOfDayInTimezone(currentDate, timezone);
-    let end = endOfDayInTimezone(currentDate, timezone);
+  const range = useMemo(() => viewRange(currentDate, viewMode, timezone), [currentDate, viewMode, timezone]);
+  const weekStart = useMemo(() => startOfWeekInTimezone(currentDate, timezone), [currentDate, timezone]);
+  const { data, loading } = useCalendarEvents(range.start, range.end);
+  const events = data ?? EMPTY_EVENTS;
+  const { data: sources = [], refetch: refetchSources } = useQuery<CalendarSource[]>(
+    '/api/calendar/sources',
+    () => api.get<CalendarSource[]>('/api/calendar/sources'),
+    { staleTime: 60_000 },
+  );
 
-    if (viewMode === 'day') {
-    } else if (viewMode === 'week') {
-      start = startOfWeekInTimezone(currentDate, timezone);
-      end = endOfWeekInTimezone(currentDate, timezone);
-    } else {
-      start = startOfMonthInTimezone(currentDate, timezone);
-      end = endOfMonthInTimezone(currentDate, timezone);
-    }
-
-    api
-      .get<CalendarEvent[]>(
-        `/api/calendar/events?start=${start.toISOString()}&end=${end.toISOString()}`
-      )
-      .then(setEvents)
-      .catch(() => {});
-  }, [currentDate, viewMode, timezone]);
-
-  useEffect(loadEvents, [loadEvents]);
-  useEffect(() => { loadSources(); }, []);
-
-  const loadSources = () => {
-    api.get<CalendarSource[]>('/api/calendar/sources').then(setSources).catch(() => {});
+  const refreshEvents = () => {
+    invalidateQueriesWithPrefix('/api/calendar/events');
+    invalidateQueriesWithPrefix('/api/dashboard');
   };
 
   useWebSocket((msg) => {
     if (msg.type === 'calendar_synced') {
-      loadEvents();
-      loadSources();
+      refetchSources();
       const payload = msg.payload as { results?: SyncResult[] } | undefined;
       if (payload?.results) {
         setSyncing(false);
@@ -100,6 +107,8 @@ export function Calendar() {
     }
     return formatDate(currentDate, timezone, { month: 'long', year: 'numeric' });
   })();
+
+  const showSpinner = loading && events.length === 0;
 
   return (
     <div className="flex flex-col h-full -m-4 p-4 overflow-hidden">
@@ -195,7 +204,7 @@ export function Calendar() {
             onCreated={(event) => {
               setAdding(false);
               setCurrentDate(event.allDay ? todayInTimezone(timezone) : new Date(event.startAt));
-              loadEvents();
+              refreshEvents();
             }}
             onCancel={() => setAdding(false)}
           />
@@ -204,34 +213,42 @@ export function Calendar() {
 
       {/* Calendar view */}
       <div className="flex-1 min-h-0 overflow-y-auto rounded-2xl bg-surface-light border border-surface-lighter p-4 flex flex-col">
-        {viewMode === 'day' && (
-          <DayView
-            date={currentDate}
-            events={events}
-            onDateChange={setCurrentDate}
-            onEventSelect={setSelectedEvent}
-          />
-        )}
-        {viewMode === 'week' && (
-          <WeekView
-            startDate={startOfWeekInTimezone(currentDate, timezone)}
-            events={events}
-            onDateChange={setCurrentDate}
-            onEventSelect={setSelectedEvent}
-            showHeader={false}
-          />
-        )}
-        {viewMode === 'month' && (
-          <MonthView
-            date={currentDate}
-            events={events}
-            onDateChange={setCurrentDate}
-            onDaySelect={(d) => {
-              setCurrentDate(d);
-              setViewMode('day');
-            }}
-            onEventSelect={setSelectedEvent}
-          />
+        {showSpinner ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <>
+            {viewMode === 'day' && (
+              <DayView
+                date={currentDate}
+                events={events}
+                onDateChange={setCurrentDate}
+                onEventSelect={setSelectedEvent}
+              />
+            )}
+            {viewMode === 'week' && (
+              <WeekView
+                startDate={weekStart}
+                events={events}
+                onDateChange={setCurrentDate}
+                onEventSelect={setSelectedEvent}
+                showHeader={false}
+              />
+            )}
+            {viewMode === 'month' && (
+              <MonthView
+                date={currentDate}
+                events={events}
+                onDateChange={setCurrentDate}
+                onDaySelect={(d) => {
+                  setCurrentDate(d);
+                  setViewMode('day');
+                }}
+                onEventSelect={setSelectedEvent}
+              />
+            )}
+          </>
         )}
       </div>
 
@@ -240,7 +257,7 @@ export function Calendar() {
         <EventDetail
           event={selectedEvent}
           onClose={() => setSelectedEvent(null)}
-          onUpdated={loadEvents}
+          onUpdated={refreshEvents}
         />
       )}
     </div>

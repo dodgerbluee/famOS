@@ -1,11 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { NavBar, NavRail } from './NavBar';
+import { KeepAlivePages } from './KeepAlivePages';
 import { useAuth } from '../../contexts/AuthContext';
+import { ShellStateProvider, type ShellContext } from '../../contexts/ShellContext';
+import { refreshVisibleQueries } from '../../lib/query';
 
-export interface ShellContext {
-  editing: boolean;
-  setEditing: (v: boolean | ((prev: boolean) => boolean)) => void;
+export type { ShellContext };
+
+function isKeepAlivePath(pathname: string) {
+  return pathname === '/' || pathname === '/calendar';
 }
 
 export function Shell() {
@@ -14,8 +18,10 @@ export function Shell() {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [routeEpoch, setRouteEpoch] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const isHome = location.pathname === '/';
+  const keepAlive = isKeepAlivePath(location.pathname);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -58,6 +64,21 @@ export function Shell() {
 
               {menuOpen && (
                 <div className="absolute top-full right-0 mt-2 min-w-[10rem] bg-surface rounded-xl border border-surface-lighter shadow-lg py-1 z-50">
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      refreshVisibleQueries();
+                      setRouteEpoch((n) => n + 1);
+                    }}
+                    className="w-full px-4 py-2.5 text-left text-sm text-text-bright hover:bg-surface-lighter transition-colors flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4 text-text-dim" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="23 4 23 10 17 10" />
+                      <polyline points="1 20 1 14 7 14" />
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                    </svg>
+                    Update
+                  </button>
                   {hasPermission('settings.view') && (
                     <button
                       onClick={() => { setMenuOpen(false); navigate('/settings'); }}
@@ -106,7 +127,12 @@ export function Shell() {
       )}
       <main className="flex-1 overflow-hidden px-2 pb-2 pt-2 md:px-4 md:pb-4 md:pt-4">
         <div className="h-full overflow-y-auto bg-surface rounded-2xl border border-surface-lighter p-2 md:p-4">
-          <Outlet context={{ editing, setEditing } satisfies ShellContext} />
+          <ShellStateProvider value={{ editing, setEditing }}>
+            <KeepAlivePages />
+            {!keepAlive && (
+              <Outlet key={routeEpoch} context={{ editing, setEditing } satisfies ShellContext} />
+            )}
+          </ShellStateProvider>
         </div>
       </main>
       <NavBar className="md:hidden" />
