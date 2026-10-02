@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { api, type Camera } from '../../api/client';
 import { useIsMobile } from '../../hooks/useIsMobile';
-import { useQuery, setQueryData } from '../../lib/query';
+import { useQuery, setQueryData, subscribeQueryRefresh } from '../../lib/query';
 import { LiveStream } from './LiveStream';
 
 interface CameraGridProps {
@@ -40,6 +40,7 @@ export function CameraGrid({ onSelect }: CameraGridProps) {
 
   useEffect(() => {
     load();
+    return subscribeQueryRefresh(load);
   }, [load]);
 
   const sortedCameras = sortCameras(cameras, cameraOrder);

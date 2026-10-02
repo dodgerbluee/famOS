@@ -4,14 +4,15 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { WebSocketProvider, useWebSocket } from './contexts/WebSocketContext';
 import { IdleProvider } from './contexts/IdleContext';
 import { Shell } from './components/layout/Shell';
-import { Home } from './pages/Home';
 import { Login } from './pages/Login';
 import { MotionAlertTray } from './components/cameras/MotionAlert';
 import { Screensaver } from './components/Screensaver';
-import { invalidateQueriesWithPrefix, setQueryData } from './lib/query';
-import type { AccountWithMember, MotionAlert } from './api/client';
+import { invalidateQueriesWithPrefix, setQueryData, useQuery } from './lib/query';
+import { seedDashboard } from './lib/dashboardSeed';
+import { seedDashboardCalendarEvents } from './lib/calendarQuery';
+import { useTimezone } from './lib/timezone';
+import { api, type AccountWithMember, type DashboardPayload, type MotionAlert } from './api/client';
 
-const Calendar = lazy(() => import('./pages/Calendar').then((m) => ({ default: m.Calendar })));
 const Cameras = lazy(() => import('./pages/Cameras').then((m) => ({ default: m.Cameras })));
 const SandersCash = lazy(() => import('./pages/SandersCash').then((m) => ({ default: m.SandersCash })));
 const SandersCashKid = lazy(() => import('./pages/SandersCashKid').then((m) => ({ default: m.SandersCashKid })));
@@ -37,6 +38,20 @@ function RouteFallback() {
 }
 
 function QuerySync() {
+  const { user } = useAuth();
+  const timezone = useTimezone();
+  const { data: dashboard } = useQuery<DashboardPayload>(
+    '/api/dashboard',
+    () => api.get<DashboardPayload>('/api/dashboard'),
+    { staleTime: 10_000, enabled: Boolean(user) },
+  );
+
+  useEffect(() => {
+    if (!dashboard) return;
+    seedDashboard(dashboard);
+    seedDashboardCalendarEvents(dashboard.events ?? [], timezone);
+  }, [dashboard, timezone]);
+
   useWebSocket(
     useCallback((msg: { type: string; payload: unknown }) => {
       if (msg.type === 'sanders_cash_accounts') {
@@ -44,6 +59,7 @@ function QuerySync() {
       }
       if (msg.type === 'calendar_synced') {
         invalidateQueriesWithPrefix('/api/calendar/events');
+        invalidateQueriesWithPrefix('/api/calendar/sources');
         invalidateQueriesWithPrefix('/api/dashboard');
       }
       if (msg.type === 'chore_templates_updated') {
@@ -143,8 +159,8 @@ export default function App() {
               <Route path="/kiosk/pair/:token" element={<PairKiosk />} />
               <Route path="/kiosk/approve/:token" element={<ApproveKiosk />} />
               <Route element={<RequireAuth><Shell /></RequireAuth>}>
-                <Route path="/" element={<Home />} />
-                <Route path="/calendar" element={<Calendar />} />
+                <Route path="/" element={null} />
+                <Route path="/calendar" element={null} />
                 <Route path="/cameras" element={<Cameras />} />
                 <Route path="/sanders-cash" element={<SandersCash />} />
                 <Route path="/sanders-cash/store" element={<RewardStore />} />

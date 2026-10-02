@@ -1,9 +1,11 @@
-import { useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
-import { useNavigate, useOutletContext } from 'react-router-dom';
-import type { ShellContext } from '../components/layout/Shell';
+import { useEffect, useState, useCallback, useRef, useMemo, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useShell } from '../contexts/ShellContext';
 import { api, type AccountWithMember, type CalendarEvent, type DashboardPayload } from '../api/client';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { useQuery, setQueryData, setQueryError } from '../lib/query';
+import { useQuery } from '../lib/query';
+import { seedDashboard } from '../lib/dashboardSeed';
+import { seedDashboardCalendarEvents, useCalendarEvents } from '../lib/calendarQuery';
 import { Leaderboard } from '../components/sanders-cash/Leaderboard';
 import { DayView } from '../components/calendar/DayView';
 import { WeekView } from '../components/calendar/WeekView';
@@ -24,7 +26,7 @@ import {
   CARD_MIN_SIZES,
 } from '../lib/gridLayout';
 import { eventSpansDate } from '../lib/calendar';
-import { addDaysInTimezone, addMonthsInTimezone, endOfMonthInTimezone, formatDate, formatTime, getDateKey, getHour, startOfMonthInTimezone, startOfWeekInTimezone, useTimezone } from '../lib/timezone';
+import { addDaysInTimezone, addMonthsInTimezone, endOfMonthInTimezone, formatDate, formatTime, fromDateKey, getDateKey, getHour, startOfMonthInTimezone, startOfWeekInTimezone, useTimezone } from '../lib/timezone';
 import { useIsMobile } from '../hooks/useIsMobile';
 
 interface CardDef {
@@ -50,21 +52,7 @@ const MOBILE_CARD_ORDER = [
   'week-calendar', 'month-calendar', 'tasks', 'services', 'media',
 ];
 
-function seedDashboard(data: DashboardPayload) {
-  setQueryData('/api/settings', data.settings);
-  setQueryData('/api/sanders-cash/accounts', data.accounts);
-  setQueryData('/api/chore-templates', data.choreTemplates);
-  setQueryData('/api/family', data.family);
-  if (data.weather) setQueryData('/api/weather', data.weather);
-  if (data.briefing) setQueryData('/api/ai/briefing', data.briefing);
-  setQueryData('/api/ai/status', data.ai);
-  if (data.gatus) setQueryData('/api/gatus/status', data.gatus);
-  else if (data.errors.gatus) setQueryError('/api/gatus/status', new Error(data.errors.gatus));
-  if (data.seerr) setQueryData('/api/seerr/requests', data.seerr);
-  else if (data.errors.seerr) setQueryError('/api/seerr/requests', new Error(data.errors.seerr));
-  if (data.vikunja) setQueryData('/api/vikunja/tasks', data.vikunja);
-  else if (data.errors.vikunja) setQueryError('/api/vikunja/tasks', new Error(data.errors.vikunja));
-}
+const EMPTY_EVENTS: CalendarEvent[] = [];
 
 function layoutFromSettings(settings?: Record<string, string>): DashboardLayout {
   if (!settings?.home_layout) return DEFAULT_GRID_LAYOUT;
@@ -91,14 +79,12 @@ export function Home() {
     { staleTime: 10_000 },
   );
   const [accounts, setAccounts] = useState<AccountWithMember[]>([]);
-  const [scheduleEvents, setScheduleEvents] = useState<CalendarEvent[]>([]);
-  const [clock, setClock] = useState(new Date());
   const [highlightNow, setHighlightNow] = useState(new Date());
   const [dayOffset, setDayOffset] = useState(0);
   const [weekOffset, setWeekOffset] = useState(0);
   const [monthOffset, setMonthOffset] = useState(0);
   const [layout, setLayout] = useState<DashboardLayout>(DEFAULT_GRID_LAYOUT);
-  const { editing, setEditing } = useOutletContext<ShellContext>();
+  const { editing, setEditing } = useShell();
   const layoutSnapshotRef = useRef<DashboardLayout | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
@@ -108,47 +94,56 @@ export function Home() {
   useEffect(() => {
     if (!dashboard) return;
     seedDashboard(dashboard);
+    seedDashboardCalendarEvents(dashboard.events ?? [], timezone);
     setAccounts(dashboard.accounts ?? []);
-    setScheduleEvents(dashboard.events ?? []);
     setLayout(layoutFromSettings(dashboard.settings));
-  }, [dashboard]);
+  }, [dashboard, timezone]);
 
-  const viewDay = addDaysInTimezone(clock, dayOffset, timezone);
-  const viewWeekStart = addDaysInTimezone(startOfWeekInTimezone(clock, timezone), weekOffset * 7, timezone);
-  const viewMonth = addMonthsInTimezone(clock, monthOffset, timezone);
+  const todayKey = getDateKey(highlightNow, timezone);
+  const viewDay = useMemo(
+    () => addDaysInTimezone(fromDateKey(todayKey, timezone), dayOffset, timezone),
+    [todayKey, dayOffset, timezone],
+  );
+  const viewWeekStart = useMemo(
+    () => addDaysInTimezone(startOfWeekInTimezone(fromDateKey(todayKey, timezone), timezone), weekOffset * 7, timezone),
+    [todayKey, weekOffset, timezone],
+  );
+  const viewMonth = useMemo(
+    () => addMonthsInTimezone(fromDateKey(todayKey, timezone), monthOffset, timezone),
+    [todayKey, monthOffset, timezone],
+  );
 
-  const loadScheduleEvents = useCallback(() => {
-    const current = new Date();
+  const homeRange = useMemo(() => {
+    const current = fromDateKey(todayKey, timezone);
     const rangeStart = monthOffset < 0
       ? startOfMonthInTimezone(addMonthsInTimezone(current, monthOffset, timezone), timezone)
       : startOfMonthInTimezone(current, timezone);
     const rangeEnd = monthOffset > 0
       ? endOfMonthInTimezone(addMonthsInTimezone(current, monthOffset, timezone), timezone)
       : endOfMonthInTimezone(current, timezone);
-    const start = addDaysInTimezone(rangeStart, -7, timezone);
-    const end = addDaysInTimezone(rangeEnd, 7, timezone);
-    api
-      .get<CalendarEvent[]>(
-        `/api/calendar/events?start=${start.toISOString()}&end=${end.toISOString()}`
-      )
-      .then(setScheduleEvents)
-      .catch(() => {});
-  }, [timezone, monthOffset]);
+    return {
+      start: addDaysInTimezone(rangeStart, -7, timezone),
+      end: addDaysInTimezone(rangeEnd, 7, timezone),
+    };
+  }, [todayKey, monthOffset, timezone]);
 
-  const dayEvents = scheduleEvents.filter((event) => eventSpansDate(event, getDateKey(viewDay, timezone), timezone));
+  const { data: rangedEvents } = useCalendarEvents(homeRange.start, homeRange.end, { enabled: monthOffset !== 0 });
+  const scheduleEvents = monthOffset === 0
+    ? (dashboard?.events ?? EMPTY_EVENTS)
+    : (rangedEvents ?? dashboard?.events ?? EMPTY_EVENTS);
+
+  const dayEvents = useMemo(
+    () => scheduleEvents.filter((event) => eventSpansDate(event, getDateKey(viewDay, timezone), timezone)),
+    [scheduleEvents, viewDay, timezone],
+  );
 
   useEffect(() => {
     const timer = setInterval(() => {
       const next = new Date();
-      setClock(next);
       setHighlightNow((prev) => (next.getMinutes() !== prev.getMinutes() ? next : prev));
     }, 1000);
     return () => clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    if (monthOffset !== 0) loadScheduleEvents();
-  }, [loadScheduleEvents, monthOffset]);
 
   useEffect(() => {
     if (editing && !layoutSnapshotRef.current) {
@@ -161,7 +156,6 @@ export function Home() {
 
   useWebSocket((msg) => {
     if (msg.type === 'sanders_cash_accounts') setAccounts(msg.payload as AccountWithMember[]);
-    if (msg.type === 'calendar_synced') loadScheduleEvents();
   });
 
   const persistTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -240,30 +234,13 @@ export function Home() {
     setEditing(false);
   };
 
-  const greeting = getGreeting(clock, timezone);
   const serviceStatus = dashboard?.gatus ?? { failing: 0, unstable: 0 };
   const mediaPending = dashboard?.seerr?.pending ?? 0;
 
   const renderCard = (cardId: string): ReactNode => {
     switch (cardId) {
       case 'briefing':
-        return (
-          <div className="flex flex-col h-full">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-2">
-              <h2 className="text-lg font-semibold text-text-bright">{greeting}</h2>
-              <span className="text-text-bright text-sm font-semibold">
-                {formatDate(clock, timezone, { weekday: 'short', month: 'short', day: 'numeric' })}
-              </span>
-              <span className="text-primary-light text-lg font-bold">
-                {formatTime(clock, timezone, { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
-                <span className="text-xs text-text-dim font-medium ml-1">{formatDate(clock, timezone, { timeZoneName: 'short' }).split(' ').pop()}</span>
-              </span>
-            </div>
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              <DailyBriefingCard compact />
-            </div>
-          </div>
-        );
+        return <BriefingCard />;
 
       case 'day-calendar':
         return (
@@ -461,6 +438,36 @@ export function Home() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function BriefingCard() {
+  const [clock, setClock] = useState(new Date());
+  const timezone = useTimezone();
+
+  useEffect(() => {
+    const timer = setInterval(() => setClock(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const greeting = getGreeting(clock, timezone);
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-2">
+        <h2 className="text-lg font-semibold text-text-bright">{greeting}</h2>
+        <span className="text-text-bright text-sm font-semibold">
+          {formatDate(clock, timezone, { weekday: 'short', month: 'short', day: 'numeric' })}
+        </span>
+        <span className="text-primary-light text-lg font-bold">
+          {formatTime(clock, timezone, { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
+          <span className="text-xs text-text-dim font-medium ml-1">{formatDate(clock, timezone, { timeZoneName: 'short' }).split(' ').pop()}</span>
+        </span>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <DailyBriefingCard compact />
+      </div>
     </div>
   );
 }

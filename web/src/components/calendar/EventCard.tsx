@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { CalendarEvent } from '../../api/client';
 import { getEventVisualState, isMultiDayEvent } from '../../lib/calendar';
 import { colorWithAlpha, formatCalendarLabel } from '../../lib/calendarDisplay';
@@ -10,9 +11,9 @@ interface EventCardProps {
   referenceTime?: Date;
 }
 
-export function EventCard({ event, compact, onSelect, referenceTime = new Date() }: EventCardProps) {
+export const EventCard = memo(function EventCard({ event, compact, onSelect, referenceTime }: EventCardProps) {
   const timezone = useTimezone();
-  const visualState = getEventVisualState(event, referenceTime);
+  const visualState = getEventVisualState(event, referenceTime ?? new Date());
   const multiDay = isMultiDayEvent(event, timezone);
 
   let timeLabel: string;
@@ -68,7 +69,7 @@ export function EventCard({ event, compact, onSelect, referenceTime = new Date()
       </div>
     </button>
   );
-}
+});
 
 function tryParseEnrichment(raw: string): string {
   if (!raw) return '';

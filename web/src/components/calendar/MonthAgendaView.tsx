@@ -1,7 +1,7 @@
 import { EventCard } from './EventCard';
 import type { CalendarEvent } from '../../api/client';
 import { eventSpansDate, getCalendarEventDateKey, getEventVisualState, isMultiDayEvent } from '../../lib/calendar';
-import { useEffect, useMemo, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import { formatDate, fromDateKey, getDateKey, getDateParts, useTimezone } from '../../lib/timezone';
 
 interface MonthAgendaViewProps {
@@ -13,7 +13,7 @@ interface MonthAgendaViewProps {
   autoScrollRelevant?: boolean;
 }
 
-export function MonthAgendaView({ date, events, onDaySelect, onEventSelect, referenceTime, autoScrollRelevant = false }: MonthAgendaViewProps) {
+export const MonthAgendaView = memo(function MonthAgendaView({ date, events, onDaySelect, onEventSelect, referenceTime, autoScrollRelevant = false }: MonthAgendaViewProps) {
   const timezone = useTimezone();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dayRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -100,4 +100,4 @@ export function MonthAgendaView({ date, events, onDaySelect, onEventSelect, refe
       )}
     </div>
   );
-}
+});
