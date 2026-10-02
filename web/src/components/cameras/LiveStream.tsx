@@ -135,7 +135,7 @@ export function LiveStream({
       ws.onclose = () => { if (!receivedStreamData) giveUp(); };
 
       failTimer = setTimeout(() => {
-        if (!receivedStreamData) giveUp();
+        if (!receivedStreamData) setConnecting(false);
       }, 8000);
 
       playInterval = setInterval(() => {
