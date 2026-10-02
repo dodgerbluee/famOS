@@ -284,7 +284,7 @@ function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragE
       }
       URL.revokeObjectURL(video.src);
     };
-  }, [camera.name, index]);
+  }, [camera.name]);
 
   return (
     <div
