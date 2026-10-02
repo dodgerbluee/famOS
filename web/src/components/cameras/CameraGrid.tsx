@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { api, type Camera } from '../../api/client';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useQuery, setQueryData, subscribeQueryRefresh } from '../../lib/query';
-import { LiveStream } from './LiveStream';
 
 interface CameraGridProps {
   onSelect?: (camera: Camera) => void;
@@ -153,7 +152,139 @@ interface CameraTileProps {
 }
 
 function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragEnd, fitMode, disableDrag }: CameraTileProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [liveReady, setLiveReady] = useState(false);
+  const [connecting, setConnecting] = useState(true);
   const fit = fitMode === 'contain' ? 'object-contain' : 'object-cover';
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    setLiveReady(false);
+    setConnecting(true);
+
+    const ms = new MediaSource();
+    video.src = URL.createObjectURL(ms);
+
+    let ws: WebSocket | null = null;
+    let sb: SourceBuffer | null = null;
+    const queue: ArrayBuffer[] = [];
+    let receivedStreamData = false;
+    let cancelled = false;
+    let playInterval: ReturnType<typeof setInterval> | null = null;
+    let staggerTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function giveUp() {
+      setConnecting(false);
+      if (playInterval) { clearInterval(playInterval); playInterval = null; }
+      ws?.close();
+      ws = null;
+      if (ms.readyState === 'open') {
+        try { ms.endOfStream(); } catch { /* ignore */ }
+      }
+    }
+
+    const MAX_QUEUED_CHUNKS = 60;
+    function pushChunk(chunk: ArrayBuffer) {
+      queue.push(chunk);
+      while (queue.length > MAX_QUEUED_CHUNKS) {
+        queue.shift();
+      }
+    }
+
+    function flushQueue() {
+      if (!sb || sb.updating || queue.length === 0) return;
+      const chunk = queue.shift()!;
+      try {
+        sb.appendBuffer(chunk);
+      } catch {
+        if (!sb.updating && ms.readyState === 'open') {
+          try {
+            const buffered = sb.buffered;
+            if (buffered.length > 0 && buffered.end(0) - buffered.start(0) > 30) {
+              sb.remove(buffered.start(0), buffered.end(0) - 10);
+            }
+          } catch { /* ignore */ }
+        }
+      }
+    }
+
+    async function onSourceOpen() {
+      if (index > 0) {
+        await new Promise<void>((resolve) => {
+          staggerTimer = setTimeout(resolve, index * STREAM_START_STAGGER_MS);
+        });
+      }
+      if (cancelled) return;
+
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}/api/cameras/${camera.name}/stream`);
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = () => {
+        ws!.send(JSON.stringify({ type: 'mse' }));
+      };
+
+      ws.onmessage = (ev) => {
+        if (typeof ev.data === 'string') {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'mse' && !sb) {
+            try {
+              sb = ms.addSourceBuffer(msg.value);
+              sb.mode = 'segments';
+              sb.addEventListener('updateend', flushQueue);
+              receivedStreamData = true;
+            } catch {
+              giveUp();
+            }
+          }
+        } else if (ev.data instanceof ArrayBuffer && sb) {
+          receivedStreamData = true;
+          if (sb.updating) {
+            pushChunk(ev.data);
+          } else {
+            try { sb.appendBuffer(ev.data); }
+            catch { pushChunk(ev.data); }
+          }
+        }
+      };
+
+      ws.onerror = () => { if (!receivedStreamData) giveUp(); };
+      ws.onclose = () => { if (!receivedStreamData) giveUp(); };
+
+      playInterval = setInterval(() => {
+        if (!video) return;
+        if (video.paused && video.readyState >= 2) {
+          video.play().catch(() => {});
+        }
+        if (video.readyState >= 2) {
+          setLiveReady(true);
+          setConnecting(false);
+        }
+        if (video.buffered.length > 0) {
+          const end = video.buffered.end(video.buffered.length - 1);
+          if (end - video.currentTime > 3) {
+            video.currentTime = end - 0.5;
+          }
+        }
+      }, 500);
+    }
+
+    ms.addEventListener('sourceopen', onSourceOpen);
+
+    return () => {
+      cancelled = true;
+      ms.removeEventListener('sourceopen', onSourceOpen);
+      if (staggerTimer) clearTimeout(staggerTimer);
+      if (playInterval) clearInterval(playInterval);
+      ws?.close();
+      if (ms.readyState === 'open') {
+        try { ms.endOfStream(); } catch { /* ignore */ }
+      }
+      URL.revokeObjectURL(video.src);
+    };
+  }, [camera.name]);
 
   return (
     <div
@@ -167,15 +298,41 @@ function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragE
       onClick={() => onSelect?.(camera)}
     >
       <div className="relative w-full bg-black" style={{ paddingBottom: '50%' }}>
-        <LiveStream
-          cameraName={camera.name}
-          className={`absolute inset-0 w-full h-full ${fit}`}
-          snapshotHeight={360}
-          staggerMs={index * STREAM_START_STAGGER_MS}
-          showStatus
-          fallbackPollMs={0}
+        {!liveReady && (
+          <img
+            src={`${camera.snapshotUrl}?t=${camera.name}`}
+            alt={camera.name}
+            className={`absolute inset-0 w-full h-full ${fit}`}
+          />
+        )}
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className={`absolute inset-0 w-full h-full ${fit} ${liveReady ? 'opacity-100' : 'opacity-0'}`}
         />
       </div>
+
+      {connecting && (
+        <div className="absolute top-2 right-2 bg-black/50 rounded-full p-1.5">
+          <svg
+            className="animate-spin w-4 h-4 text-white"
+            viewBox="0 0 24 24"
+            fill="none"
+          >
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+        </div>
+      )}
+
+      {liveReady && (
+        <div className="absolute top-2 right-2 bg-accent-red/90 rounded-full px-2 py-0.5 flex items-center gap-1">
+          <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+          <span className="text-white text-[10px] font-bold uppercase">Live</span>
+        </div>
+      )}
 
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 to-transparent p-2">
         <p className="text-white font-medium text-xs capitalize">

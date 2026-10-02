@@ -413,7 +413,3 @@ export interface DashboardPayload {
 export function immichAssetUrl(id: string, size: 'preview' | 'thumbnail' = 'preview') {
   return `/api/immich/assets/${id}?size=${size}`;
 }
-
-export function cameraSnapshotUrl(name: string, height = 360) {
-  return `/api/cameras/${name}/snapshot?h=${height}`;
-}
