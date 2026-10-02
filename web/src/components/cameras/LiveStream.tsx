@@ -1,46 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
-import { useStreamPaused } from '../../hooks/useStreamPaused';
-import { cameraSnapshotUrl } from '../../api/client';
 
 interface LiveStreamProps {
   cameraName: string;
   className?: string;
-  fallbackPollMs?: number;
-  snapshotHeight?: number;
-  staggerMs?: number;
-  showStatus?: boolean;
-  statusCorner?: 'tr' | 'tl';
-  snapshotSrc?: string;
-  ignorePause?: boolean;
 }
 
-export function LiveStream({
-  cameraName,
-  className = '',
-  fallbackPollMs = 2000,
-  snapshotHeight = 720,
-  staggerMs = 0,
-  showStatus = false,
-  statusCorner = 'tr',
-  snapshotSrc,
-  ignorePause = false,
-}: LiveStreamProps) {
+// Restored from before PR #2: MSE video is the view. JPEG is a last-resort
+// static still after a hard websocket failure — not idle-pause, not 2s polling.
+export function LiveStream({ cameraName, className = '' }: LiveStreamProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [useFallback, setUseFallback] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(() => Date.now());
-  const [liveReady, setLiveReady] = useState(false);
-  const [connecting, setConnecting] = useState(true);
-  const idleOrHidden = useStreamPaused();
-  const paused = ignorePause ? false : idleOrHidden;
 
   useEffect(() => {
-    if (useFallback || paused) return;
+    if (useFallback) return;
 
     const video = videoRef.current;
     if (!video) return;
-
-    setConnecting(true);
-    setLiveReady(false);
 
     const ms = new MediaSource();
     video.src = URL.createObjectURL(ms);
@@ -50,15 +25,10 @@ export function LiveStream({
     const queue: ArrayBuffer[] = [];
     let receivedStreamData = false;
     let cancelled = false;
-    let failTimer: ReturnType<typeof setTimeout> | null = null;
-    let playInterval: ReturnType<typeof setInterval> | null = null;
-    let staggerTimer: ReturnType<typeof setTimeout> | null = null;
 
     function giveUp() {
-      setConnecting(false);
-      if (fallbackPollMs > 0) setUseFallback(true);
-      if (failTimer) { clearTimeout(failTimer); failTimer = null; }
-      if (playInterval) { clearInterval(playInterval); playInterval = null; }
+      if (cancelled) return;
+      setUseFallback(true);
       ws?.close();
       ws = null;
       if (ms.readyState === 'open') {
@@ -91,12 +61,7 @@ export function LiveStream({
       }
     }
 
-    async function onSourceOpen() {
-      if (staggerMs > 0) {
-        await new Promise<void>((resolve) => {
-          staggerTimer = setTimeout(resolve, staggerMs);
-        });
-      }
+    function onSourceOpen() {
       if (cancelled) return;
 
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -133,87 +98,52 @@ export function LiveStream({
 
       ws.onerror = () => { if (!receivedStreamData) giveUp(); };
       ws.onclose = () => { if (!receivedStreamData) giveUp(); };
-
-      failTimer = setTimeout(() => {
-        if (!receivedStreamData) setConnecting(false);
-      }, 8000);
-
-      playInterval = setInterval(() => {
-        if (!video) return;
-        if (video.paused && video.readyState >= 2) {
-          video.play().catch(() => {});
-        }
-        if (video.readyState >= 2) {
-          setLiveReady(true);
-          setConnecting(false);
-        }
-        if (video.buffered.length > 0) {
-          const end = video.buffered.end(video.buffered.length - 1);
-          if (end - video.currentTime > 3) {
-            video.currentTime = end - 0.5;
-          }
-        }
-      }, 500);
     }
 
     ms.addEventListener('sourceopen', onSourceOpen);
 
+    const playInterval = setInterval(() => {
+      if (!video) return;
+      if (video.paused && video.readyState >= 2) {
+        video.play().catch(() => {});
+      }
+      if (video.buffered.length > 0) {
+        const end = video.buffered.end(video.buffered.length - 1);
+        if (end - video.currentTime > 3) {
+          video.currentTime = end - 0.5;
+        }
+      }
+    }, 1000);
+
     return () => {
       cancelled = true;
       ms.removeEventListener('sourceopen', onSourceOpen);
-      if (staggerTimer) clearTimeout(staggerTimer);
-      if (failTimer) clearTimeout(failTimer);
-      if (playInterval) clearInterval(playInterval);
+      clearInterval(playInterval);
       ws?.close();
       if (ms.readyState === 'open') {
         try { ms.endOfStream(); } catch { /* ignore */ }
       }
       URL.revokeObjectURL(video.src);
-      setLiveReady(false);
     };
-  }, [cameraName, useFallback, paused, staggerMs, fallbackPollMs]);
+  }, [cameraName, useFallback]);
 
-  useEffect(() => {
-    if (paused || !useFallback || fallbackPollMs <= 0) return;
-    const interval = setInterval(() => setRefreshKey(Date.now()), fallbackPollMs);
-    return () => clearInterval(interval);
-  }, [useFallback, paused, fallbackPollMs]);
-
-  const showLive = liveReady && !paused && !useFallback;
-  const snapshotUrl = snapshotSrc ?? `${cameraSnapshotUrl(cameraName, snapshotHeight)}&t=${refreshKey}`;
-  const cornerClass = statusCorner === 'tl' ? 'top-2 left-2' : 'top-2 right-2';
+  if (useFallback) {
+    return (
+      <img
+        src={`/api/cameras/${cameraName}/snapshot`}
+        alt={cameraName}
+        className={className}
+      />
+    );
+  }
 
   return (
-    <>
-      <img
-        src={snapshotUrl}
-        alt={cameraName}
-        className={`${className} transition-opacity duration-300 ${showLive ? 'opacity-0' : 'opacity-100'}`}
-      />
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        className={`${className} transition-opacity duration-300 ${showLive ? 'opacity-100' : 'opacity-0'}`}
-      />
-      {showStatus && connecting && !paused && !useFallback && (
-        <div className={`absolute ${cornerClass} bg-black/50 rounded-full p-1.5 flex items-center gap-1.5`}>
-          <svg className="animate-spin w-4 h-4 text-white" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-          {statusCorner === 'tl' && (
-            <span className="text-white text-[10px] font-semibold pr-1">Connecting</span>
-          )}
-        </div>
-      )}
-      {showStatus && showLive && (
-        <div className={`absolute ${cornerClass} bg-accent-red/90 rounded-full px-2 py-0.5 flex items-center gap-1`}>
-          <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-          <span className="text-white text-[10px] font-bold uppercase">Live</span>
-        </div>
-      )}
-    </>
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      muted
+      className={className}
+    />
   );
 }
