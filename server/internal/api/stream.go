@@ -28,9 +28,8 @@ func StreamProxy(client *frigate.Client) http.HandlerFunc {
 			log.Printf("stream: login failed: %v", err)
 		}
 
-		frigateWS := strings.Replace(base, "https://", "wss://", 1)
-		frigateWS = strings.Replace(frigateWS, "http://", "ws://", 1)
-		frigateWS += "/api/go2rtc/api/ws?src=" + url.QueryEscape(cameraName)
+		wsBase := strings.Replace(base, "https://", "wss://", 1)
+		wsBase = strings.Replace(wsBase, "http://", "ws://", 1)
 
 		clientConn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -39,13 +38,13 @@ func StreamProxy(client *frigate.Client) http.HandlerFunc {
 		}
 		defer clientConn.Close()
 
-		backendConn, resp, err := dialGo2rtc(client, frigateWS)
+		backendConn, resp, err := dialGo2rtc(client, wsBase, cameraName)
 		if err != nil {
 			status := 0
 			if resp != nil {
 				status = resp.StatusCode
 			}
-			log.Printf("stream: dial frigate ws failed for %s: %v (status=%d url=%s)", cameraName, err, status, frigateWS)
+			log.Printf("stream: dial frigate ws failed for %s: %v (status=%d base=%s)", cameraName, err, status, wsBase)
 			clientConn.WriteMessage(websocket.CloseMessage,
 				websocket.FormatCloseMessage(websocket.CloseInternalServerErr, dialFailureReason(status, err)))
 			return
@@ -88,9 +87,15 @@ func StreamProxy(client *frigate.Client) http.HandlerFunc {
 	}
 }
 
-// dialGo2rtc opens the go2rtc websocket, re-authenticating once if Frigate
-// rejects the session cookie.
-func dialGo2rtc(client *frigate.Client, wsURL string) (*websocket.Conn, *http.Response, error) {
+// go2rtcWSPaths lists where Frigate proxies the go2rtc websocket, newest first.
+// Frigate >= 0.17 serves live streams at /live/mse/api/ws and restricts the
+// legacy /api/go2rtc proxy to admins, which shows up as a 403 for normal
+// sessions. Older releases only have /api/go2rtc/api/ws.
+var go2rtcWSPaths = []string{"/live/mse/api/ws", "/api/go2rtc/api/ws"}
+
+// dialGo2rtc opens the go2rtc websocket, trying each known path, and
+// re-authenticating once if Frigate rejects the session cookie.
+func dialGo2rtc(client *frigate.Client, wsBase, src string) (*websocket.Conn, *http.Response, error) {
 	dialer := websocket.Dialer{
 		Jar:              client.CookieJar(),
 		HandshakeTimeout: 10 * time.Second,
@@ -98,17 +103,34 @@ func dialGo2rtc(client *frigate.Client, wsURL string) (*websocket.Conn, *http.Re
 	header := http.Header{}
 	header.Set("X-CSRF-TOKEN", "1")
 
-	conn, resp, err := dialer.Dial(wsURL, header)
-	if err == nil || resp == nil || resp.StatusCode != http.StatusUnauthorized {
-		return conn, resp, err
-	}
+	var lastResp *http.Response
+	var lastErr error
+	for _, path := range go2rtcWSPaths {
+		wsURL := wsBase + path + "?src=" + url.QueryEscape(src)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if loginErr := client.Login(ctx); loginErr != nil {
-		return nil, resp, fmt.Errorf("re-login after 401: %w (dial: %w)", loginErr, err)
+		conn, resp, err := dialer.Dial(wsURL, header)
+		if err != nil && resp != nil && resp.StatusCode == http.StatusUnauthorized {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			loginErr := client.Login(ctx)
+			cancel()
+			if loginErr != nil {
+				err = fmt.Errorf("re-login after 401: %w (dial: %w)", loginErr, err)
+			} else {
+				conn, resp, err = dialer.Dial(wsURL, header)
+			}
+		}
+		if err == nil {
+			return conn, resp, nil
+		}
+
+		status := 0
+		if resp != nil {
+			status = resp.StatusCode
+		}
+		log.Printf("stream: dial %s failed: %v (status=%d)", wsURL, err, status)
+		lastResp, lastErr = resp, err
 	}
-	return dialer.Dial(wsURL, header)
+	return nil, lastResp, lastErr
 }
 
 // dialFailureReason explains a failed dial in the close frame so the reason is

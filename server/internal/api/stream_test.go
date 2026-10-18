@@ -14,21 +14,25 @@ import (
 	"github.com/sandershome/server/internal/frigate"
 )
 
-// fakeFrigate serves the two endpoints the stream proxy depends on: the login
-// endpoint that issues the session cookie, and the go2rtc websocket that only
-// accepts requests carrying the current session cookie. Each login rotates the
-// cookie so tests can tell a fresh session from a stale one.
+// fakeFrigate serves the endpoints the stream proxy depends on: the login
+// endpoint that issues the session cookie, and the go2rtc websockets that only
+// accept requests carrying the current session cookie. Each login rotates the
+// cookie so tests can tell a fresh session from a stale one. newPathStatus and
+// legacyPathStatus simulate Frigate releases that only serve one of the two
+// websocket paths; 0 means the path is served.
 type fakeFrigate struct {
-	mu     sync.Mutex
-	token  string
-	logins int
-	srv    *httptest.Server
+	mu               sync.Mutex
+	token            string
+	logins           int
+	newPathStatus    int
+	legacyPathStatus int
+	upgrader         websocket.Upgrader
+	srv              *httptest.Server
 }
 
 func newFakeFrigate(t *testing.T) *fakeFrigate {
 	t.Helper()
 	f := &fakeFrigate{}
-	upgrader := websocket.Upgrader{}
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/login":
@@ -39,23 +43,33 @@ func newFakeFrigate(t *testing.T) *fakeFrigate {
 			f.mu.Unlock()
 			http.SetCookie(w, &http.Cookie{Name: "nginxaccess", Value: token, Path: "/"})
 			w.WriteHeader(http.StatusOK)
+		case "/live/mse/api/ws":
+			f.serveWS(w, r, f.newPathStatus)
 		case "/api/go2rtc/api/ws":
-			if !f.cookieIsValid(r) {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
-			conn, err := upgrader.Upgrade(w, r, nil)
-			if err != nil {
-				return
-			}
-			defer conn.Close()
-			conn.WriteMessage(websocket.BinaryMessage, []byte("fmp4-chunk"))
+			f.serveWS(w, r, f.legacyPathStatus)
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	t.Cleanup(f.srv.Close)
 	return f
+}
+
+func (f *fakeFrigate) serveWS(w http.ResponseWriter, r *http.Request, denyStatus int) {
+	if denyStatus != 0 {
+		http.Error(w, "denied", denyStatus)
+		return
+	}
+	if !f.cookieIsValid(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	conn, err := f.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	conn.WriteMessage(websocket.BinaryMessage, []byte("fmp4-chunk"))
 }
 
 func (f *fakeFrigate) cookieIsValid(r *http.Request) bool {
@@ -72,8 +86,8 @@ func (f *fakeFrigate) cookieIsValid(r *http.Request) bool {
 	return false
 }
 
-func (f *fakeFrigate) wsURL() string {
-	return strings.Replace(f.srv.URL, "http://", "ws://", 1) + "/api/go2rtc/api/ws?src=boys"
+func (f *fakeFrigate) wsBase() string {
+	return strings.Replace(f.srv.URL, "http://", "ws://", 1)
 }
 
 func readChunk(t *testing.T, conn *websocket.Conn) {
@@ -88,12 +102,9 @@ func readChunk(t *testing.T, conn *websocket.Conn) {
 	}
 }
 
-// End to end: browser websocket to the proxy, proxy websocket to go2rtc.
-func TestStreamProxyRelaysGo2rtcData(t *testing.T) {
-	frigateSrv := newFakeFrigate(t)
-	client := frigate.NewClient(frigateSrv.srv.URL)
-	client.Configure(frigateSrv.srv.URL, "admin", "password")
-
+// openStream runs the full proxy path: browser websocket in, go2rtc websocket out.
+func openStream(t *testing.T, client *frigate.Client) {
+	t.Helper()
 	router := chi.NewRouter()
 	router.Get("/api/cameras/{name}/stream", StreamProxy(client))
 	appSrv := httptest.NewServer(router)
@@ -109,6 +120,36 @@ func TestStreamProxyRelaysGo2rtcData(t *testing.T) {
 	readChunk(t, conn)
 }
 
+func TestStreamProxyRelaysGo2rtcData(t *testing.T) {
+	frigateSrv := newFakeFrigate(t)
+	client := frigate.NewClient(frigateSrv.srv.URL)
+	client.Configure(frigateSrv.srv.URL, "admin", "password")
+
+	openStream(t, client)
+}
+
+// Frigate >= 0.17 restricts the legacy /api/go2rtc proxy (403 for normal
+// sessions); the proxy must use /live/mse/api/ws instead.
+func TestStreamProxyUsesNewLiveMSEPathWhenLegacyIsRestricted(t *testing.T) {
+	frigateSrv := newFakeFrigate(t)
+	frigateSrv.legacyPathStatus = http.StatusForbidden
+	client := frigate.NewClient(frigateSrv.srv.URL)
+	client.Configure(frigateSrv.srv.URL, "admin", "password")
+
+	openStream(t, client)
+}
+
+// Older Frigate releases have no /live/mse/api/ws; the proxy must fall back to
+// the legacy go2rtc path.
+func TestStreamProxyFallsBackToLegacyGo2rtcPath(t *testing.T) {
+	frigateSrv := newFakeFrigate(t)
+	frigateSrv.newPathStatus = http.StatusNotFound
+	client := frigate.NewClient(frigateSrv.srv.URL)
+	client.Configure(frigateSrv.srv.URL, "admin", "password")
+
+	openStream(t, client)
+}
+
 // Frigate rejects the go2rtc websocket with 401 when its session cookie is
 // missing or expired; the dial must re-authenticate and retry instead of
 // failing the stream.
@@ -117,7 +158,7 @@ func TestDialGo2rtcReauthenticatesOn401(t *testing.T) {
 	client := frigate.NewClient(frigateSrv.srv.URL)
 	client.Configure(frigateSrv.srv.URL, "admin", "password")
 
-	conn, resp, err := dialGo2rtc(client, frigateSrv.wsURL())
+	conn, resp, err := dialGo2rtc(client, frigateSrv.wsBase(), "boys")
 	if err != nil {
 		status := 0
 		if resp != nil {
