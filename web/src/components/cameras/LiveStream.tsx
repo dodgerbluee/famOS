@@ -69,6 +69,7 @@ export function LiveStream({ cameraName, className = '' }: LiveStreamProps) {
       ws.binaryType = 'arraybuffer';
 
       ws.onopen = () => {
+        console.debug(`[stream:${cameraName}] ws open, sending mse`);
         ws!.send(JSON.stringify({ type: 'mse' }));
       };
 
@@ -76,6 +77,7 @@ export function LiveStream({ cameraName, className = '' }: LiveStreamProps) {
         if (typeof ev.data === 'string') {
           const msg = JSON.parse(ev.data);
           if (msg.type === 'mse' && !sb) {
+            console.debug(`[stream:${cameraName}] codec: ${msg.value}`);
             try {
               sb = ms.addSourceBuffer(msg.value);
               sb.mode = 'segments';
@@ -96,8 +98,8 @@ export function LiveStream({ cameraName, className = '' }: LiveStreamProps) {
         }
       };
 
-      ws.onerror = () => { if (!receivedStreamData) giveUp(); };
-      ws.onclose = () => { if (!receivedStreamData) giveUp(); };
+      ws.onerror = () => { console.debug(`[stream:${cameraName}] ws error`); if (!receivedStreamData) giveUp(); };
+      ws.onclose = (ev) => { console.debug(`[stream:${cameraName}] ws close code=${ev.code} reason=${ev.reason}`); if (!receivedStreamData) giveUp(); };
     }
 
     ms.addEventListener('sourceopen', onSourceOpen);

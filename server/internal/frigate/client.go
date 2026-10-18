@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"strings"
 	"sync"
 	"time"
 )
@@ -23,7 +24,7 @@ type Client struct {
 func NewClient(baseURL string) *Client {
 	jar, _ := cookiejar.New(nil)
 	return &Client{
-		baseURL: baseURL,
+		baseURL: strings.TrimRight(baseURL, "/"),
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 			Jar:     jar,
@@ -35,7 +36,7 @@ func (c *Client) Configure(baseURL, username, password string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if baseURL != "" {
-		c.baseURL = baseURL
+		c.baseURL = strings.TrimRight(baseURL, "/")
 	}
 	c.username = username
 	c.password = password
