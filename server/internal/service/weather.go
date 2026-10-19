@@ -5,12 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/sandershome/server/internal/db"
+)
+
+const (
+	weatherCacheKey = "weather:current"
+	weatherFreshTTL = 30 * time.Minute
 )
 
 type WeatherService struct {
@@ -19,6 +26,10 @@ type WeatherService struct {
 	defaultLat float64
 	defaultLon float64
 	tzLocation *time.Location
+	baseURL    string
+	airBaseURL string
+
+	fetchMu sync.Mutex // single-flight: only one upstream fetch at a time
 }
 
 func NewWeatherService(database *db.DB, lat, lon float64, timezone string) *WeatherService {
@@ -32,6 +43,8 @@ func NewWeatherService(database *db.DB, lat, lon float64, timezone string) *Weat
 		defaultLat: lat,
 		defaultLon: lon,
 		tzLocation: loc,
+		baseURL:    "https://api.open-meteo.com",
+		airBaseURL: "https://air-quality-api.open-meteo.com",
 	}
 }
 
@@ -144,28 +157,74 @@ type openMeteoResponse struct {
 	} `json:"daily"`
 }
 
+// GetWeather returns the shared cached snapshot, refreshing upstream at most
+// once per weatherFreshTTL across all callers (single-flight). On upstream
+// failure it serves the last good snapshot instead of erroring, so client
+// retries can never turn into an open-meteo hammering loop.
 func (s *WeatherService) GetWeather(ctx context.Context) (*WeatherData, error) {
-	cacheKey := "weather:" + time.Now().In(s.tzLocation).Format("2006-01-02-15")
-	var cached string
-	err := s.db.QueryRow(`SELECT content FROM ai_cache WHERE cache_key = ? AND expires_at > CURRENT_TIMESTAMP`, cacheKey).Scan(&cached)
-	if err == nil && cached != "" {
-		var data WeatherData
-		if json.Unmarshal([]byte(cached), &data) == nil {
-			return &data, nil
-		}
+	data, fetchedAt, cached := s.loadCache()
+	if cached && time.Since(fetchedAt) < weatherFreshTTL {
+		return data, nil
 	}
 
+	s.fetchMu.Lock()
+	defer s.fetchMu.Unlock()
+
+	// Another caller may have refreshed while we waited for the lock.
+	data, fetchedAt, cached = s.loadCache()
+	if cached && time.Since(fetchedAt) < weatherFreshTTL {
+		return data, nil
+	}
+
+	fresh, err := s.fetch(ctx)
+	if err != nil {
+		if cached {
+			log.Printf("weather: refresh failed, serving stale snapshot from %s: %v", fetchedAt.Format(time.RFC3339), err)
+			return data, nil
+		}
+		return nil, err
+	}
+	return fresh, nil
+}
+
+// Refresh forces an upstream fetch and updates the cache; used by the
+// background scheduler so the cache is warm before any page asks for it.
+func (s *WeatherService) Refresh(ctx context.Context) error {
+	s.fetchMu.Lock()
+	defer s.fetchMu.Unlock()
+	_, err := s.fetch(ctx)
+	return err
+}
+
+func (s *WeatherService) loadCache() (*WeatherData, time.Time, bool) {
+	var content string
+	if err := s.db.QueryRow(`SELECT content FROM ai_cache WHERE cache_key = ?`, weatherCacheKey).Scan(&content); err != nil || content == "" {
+		return nil, time.Time{}, false
+	}
+	var data WeatherData
+	if err := json.Unmarshal([]byte(content), &data); err != nil {
+		return nil, time.Time{}, false
+	}
+	fetchedAt, err := time.Parse(time.RFC3339, data.FetchedAt)
+	if err != nil {
+		return &data, time.Time{}, true
+	}
+	return &data, fetchedAt, true
+}
+
+func (s *WeatherService) fetch(ctx context.Context) (*WeatherData, error) {
 	lat, lon := s.userLocation()
 	if lat == 0 && lon == 0 {
 		return nil, fmt.Errorf("location not configured — set latitude and longitude in Settings")
 	}
 
 	forecastURL := fmt.Sprintf(
-		"https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f"+
+		"%s/v1/forecast?latitude=%.4f&longitude=%.4f"+
 			"&current_weather=true"+
 			"&hourly=temperature_2m,apparent_temperature,precipitation,precipitation_probability,weathercode,relativehumidity_2m,windspeed_10m,dewpoint_2m,visibility,surface_pressure"+
 			"&daily=temperature_2m_max,temperature_2m_min,uv_index_max,precipitation_probability_max,precipitation_sum,weathercode,sunrise,sunset"+
 			"&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&timezone=%s&forecast_days=7",
+		s.baseURL,
 		lat, lon,
 		url.QueryEscape(s.tzLocation.String()),
 	)
@@ -318,7 +377,9 @@ func (s *WeatherService) GetWeather(ctx context.Context) (*WeatherData, error) {
 
 	if cacheData, err := json.Marshal(data); err == nil {
 		s.db.Exec(`INSERT OR REPLACE INTO ai_cache (id, cache_key, content, expires_at) VALUES (?, ?, ?, ?)`,
-			cacheKey, cacheKey, string(cacheData), time.Now().In(s.tzLocation).Add(30*time.Minute).Format(time.RFC3339))
+			weatherCacheKey, weatherCacheKey, string(cacheData), time.Now().UTC().Add(24*time.Hour).Format(time.RFC3339))
+		// Clean up per-hour cache rows from the previous scheme.
+		s.db.Exec(`DELETE FROM ai_cache WHERE cache_key LIKE 'weather:%' AND cache_key != ?`, weatherCacheKey)
 	}
 
 	return data, nil
@@ -343,7 +404,8 @@ type airQualityResponse struct {
 
 func (s *WeatherService) fetchAirQuality(ctx context.Context, lat, lon float64) (*AirQuality, error) {
 	url := fmt.Sprintf(
-		"https://air-quality-api.open-meteo.com/v1/air-quality?latitude=%.4f&longitude=%.4f&current=us_aqi,pm2_5,pm10,dust",
+		"%s/v1/air-quality?latitude=%.4f&longitude=%.4f&current=us_aqi,pm2_5,pm10,dust",
+		s.airBaseURL,
 		lat, lon,
 	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)

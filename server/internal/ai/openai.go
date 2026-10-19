@@ -185,8 +185,10 @@ type openaiChatRequest struct {
 type openaiChatResponse struct {
 	Choices []struct {
 		Message struct {
-			Content string `json:"content"`
+			Content   string `json:"content"`
+			Reasoning string `json:"reasoning"`
 		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
@@ -236,9 +238,19 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req CompletionRequest) (*
 		return nil, fmt.Errorf("api error: %s", parsed.Error.Message)
 	}
 	if len(parsed.Choices) == 0 {
-		return nil, fmt.Errorf("empty completion")
+		return nil, fmt.Errorf("empty completion: %s", snippet(respBody))
 	}
-	return &CompletionResponse{Text: parsed.Choices[0].Message.Content}, nil
+	content := strings.TrimSpace(parsed.Choices[0].Message.Content)
+	if content == "" {
+		// Reasoning models can burn the whole token budget on thinking and
+		// return no visible content; surface the cause instead of "" so the
+		// engine logs something actionable.
+		if parsed.Choices[0].Message.Reasoning != "" {
+			return nil, fmt.Errorf("model returned only reasoning (finish_reason=%s); raise max_tokens or use a non-reasoning model", parsed.Choices[0].FinishReason)
+		}
+		return nil, fmt.Errorf("empty completion content (finish_reason=%s): %s", parsed.Choices[0].FinishReason, snippet(respBody))
+	}
+	return &CompletionResponse{Text: content}, nil
 }
 
 func openaiMessages(req CompletionRequest) []openaiChatMessage {

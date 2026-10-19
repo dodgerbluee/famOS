@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/sandershome/server/internal/config"
@@ -183,7 +184,7 @@ Be warm, practical, and family-friendly. Keep it concise.`, partOfDay, eventsJSO
 	resp, err := e.complete(ctx, CompletionRequest{
 		System:      "You are a warm, helpful family assistant named SandersHome. Respond only in valid JSON.",
 		Prompt:      prompt,
-		MaxTokens:   500,
+		MaxTokens:   1000,
 		Temperature: 0.5,
 	})
 	if err != nil {
@@ -209,7 +210,8 @@ Be warm, practical, and family-friendly. Keep it concise.`, partOfDay, eventsJSO
 	}
 	result.Date = today
 	if result.Summary == "" {
-		result.Summary = "Your daily briefing is ready, but the AI response came back without a summary."
+		log.Printf("briefing: model returned JSON without a usable summary; raw=%q", truncateForLog(resp.Text, 500))
+		result.Summary = fallbackBriefingSummary(result)
 	}
 
 	if data, err := json.Marshal(result); err == nil {
@@ -240,6 +242,22 @@ func firstNonEmptyBriefing(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// fallbackBriefingSummary assembles a usable summary from whatever fields the
+// model did return, instead of showing a generic error string.
+func fallbackBriefingSummary(b DailyBriefing) string {
+	parts := []string{}
+	if b.CalendarSummary != "" {
+		parts = append(parts, b.CalendarSummary)
+	}
+	if b.WeatherSummary != "" {
+		parts = append(parts, b.WeatherSummary)
+	}
+	if len(parts) == 0 && len(b.Highlights) > 0 {
+		return strings.Join(b.Highlights, " ")
+	}
+	return strings.Join(parts, " ")
 }
 
 func (e *Engine) InterpretWeather(ctx context.Context, weatherJSON string) (*WeatherInsight, error) {
@@ -305,13 +323,13 @@ func (e *Engine) setCache(key, content string, ttl time.Duration) {
 }
 
 func (e *Engine) complete(ctx context.Context, req CompletionRequest) (*CompletionResponse, error) {
-	log.Printf("ai.request provider=%s system=%q prompt=%q max_tokens=%d temperature=%.2f", e.provider.Name(), truncateForLog(req.System, 500), truncateForLog(req.Prompt, 4000), req.MaxTokens, req.Temperature)
+	log.Printf("ai.request provider=%s prompt=%q max_tokens=%d temperature=%.2f", e.provider.Name(), truncateForLog(req.Prompt, 300), req.MaxTokens, req.Temperature)
 	resp, err := e.provider.Complete(ctx, req)
 	if err != nil {
 		log.Printf("ai.error provider=%s err=%v", e.provider.Name(), err)
 		return nil, err
 	}
-	log.Printf("ai.response provider=%s text=%q", e.provider.Name(), truncateForLog(resp.Text, 4000))
+	log.Printf("ai.response provider=%s chars=%d text=%q", e.provider.Name(), len(resp.Text), truncateForLog(resp.Text, 800))
 	return resp, nil
 }
 

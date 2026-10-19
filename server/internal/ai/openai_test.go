@@ -97,6 +97,23 @@ func TestOpenAIBadKeyReportsCheckYourAPIKey(t *testing.T) {
 	}
 }
 
+func TestOpenAIEmptyContentIsAnError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": ""}, "finish_reason": "length"},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	p := NewOpenAIProvider(srv.URL, "gpt-4o", "")
+	_, err := p.Complete(context.Background(), CompletionRequest{Prompt: "hi"})
+	if err == nil {
+		t.Fatal("expected error for empty completion content")
+	}
+}
+
 func TestEngineSelectsProviderByKind(t *testing.T) {
 	database, err := db.New(":memory:")
 	if err != nil {

@@ -54,8 +54,31 @@ func (s *Scheduler) Start(ctx context.Context) {
 	go s.runCalendarSync(ctx)
 	go s.runDailyBriefing(ctx)
 	go s.runSessionCleanup(ctx)
+	go s.runWeatherRefresh(ctx)
 	if s.chorePoller != nil {
 		go s.runChorePoller(ctx)
+	}
+}
+
+// runWeatherRefresh keeps the weather cache warm on a fixed cadence so page
+// loads never trigger open-meteo calls (which was tripping their rate limit).
+func (s *Scheduler) runWeatherRefresh(ctx context.Context) {
+	if err := s.weather.Refresh(ctx); err != nil {
+		log.Printf("initial weather refresh failed: %v", err)
+	}
+
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := s.weather.Refresh(ctx); err != nil {
+				log.Printf("weather refresh failed: %v", err)
+			}
+		}
 	}
 }
 
