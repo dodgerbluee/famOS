@@ -159,14 +159,6 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 		r.Get("/api/calendar/sources", calendarHandler.ListSources)
 		r.Get("/api/calendar/events", calendarHandler.GetEvents)
 
-		r.Get("/api/cameras", camerasHandler.ListCameras)
-		r.Get("/api/cameras/frigate/open", camerasHandler.OpenFrigate)
-		r.Get("/api/cameras/status", camerasHandler.GetStatus)
-		r.Get("/api/cameras/{name}/snapshot", camerasHandler.GetSnapshot)
-		r.Get("/api/cameras/{name}/stream", StreamProxy(svc.Frigate))
-		r.Get("/api/cameras/events", camerasHandler.ListEvents)
-		r.Get("/api/cameras/events/{eventId}/thumbnail", camerasHandler.GetEventThumbnail)
-
 		r.Get("/api/weather", weatherHandler.GetWeather)
 
 		r.Get("/api/ai/status", aiHandler.GetStatus)
@@ -213,6 +205,16 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 		r.With(auth.RequirePermission("family.manage")).Post("/api/kiosks/{id}/logout", kioskHandler.Logout)
 		r.With(auth.RequirePermission("family.manage")).Delete("/api/kiosks/{id}", kioskHandler.Delete)
 		r.With(auth.RequirePermission("family.manage")).Post("/api/kiosks/approve", kioskHandler.Approve)
+
+		// Camera reads (kiosk sessions are valid sessions, so paired kiosks
+		// keep access; anonymous visitors do not)
+		r.Get("/api/cameras", camerasHandler.ListCameras)
+		r.Get("/api/cameras/frigate/open", camerasHandler.OpenFrigate)
+		r.Get("/api/cameras/status", camerasHandler.GetStatus)
+		r.Get("/api/cameras/{name}/snapshot", camerasHandler.GetSnapshot)
+		r.Get("/api/cameras/{name}/stream", StreamProxy(svc.Frigate))
+		r.Get("/api/cameras/events", camerasHandler.ListEvents)
+		r.Get("/api/cameras/events/{eventId}/thumbnail", camerasHandler.GetEventThumbnail)
 
 		// Family management
 		r.With(auth.RequirePermission("family.manage")).Post("/api/family", familyHandler.Create)
