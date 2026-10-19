@@ -130,29 +130,31 @@ func (s *Scheduler) runChorePoller(ctx context.Context) {
 	}
 }
 
+// runDailyBriefing keeps a briefing cached for the current part of day. The
+// briefing cache key includes the part of day (morning/afternoon/evening/
+// night), so an hourly check picks up each rollover and generates in the
+// background — page loads then only ever read from cache.
 func (s *Scheduler) runDailyBriefing(ctx context.Context) {
-	loc, err := time.LoadLocation(s.timezone)
-	if err != nil {
-		loc = time.UTC
-	}
+	s.ensureBriefing(ctx)
+
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
 
 	for {
-		now := time.Now().In(loc)
-		next := time.Date(now.Year(), now.Month(), now.Day(), 5, 0, 0, 0, loc)
-		if now.After(next) {
-			next = next.Add(24 * time.Hour)
-		}
-
-		wait := time.Until(next)
-		log.Printf("next daily briefing scheduled at %s (in %s)", next.Format(time.RFC3339), wait.Round(time.Minute))
-
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(wait):
-			s.generateBriefing(ctx)
+		case <-ticker.C:
+			s.ensureBriefing(ctx)
 		}
 	}
+}
+
+func (s *Scheduler) ensureBriefing(ctx context.Context) {
+	if s.engine.CachedBriefing() != nil {
+		return
+	}
+	s.generateBriefing(ctx)
 }
 
 func (s *Scheduler) GenerateBriefingNow(ctx context.Context) {
