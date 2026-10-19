@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sandershome/server/internal/config"
@@ -16,6 +17,8 @@ type Engine struct {
 	provider Provider
 	db       *db.DB
 	location *time.Location
+
+	briefingMu sync.Mutex // one briefing generation at a time, across scheduler and handlers
 }
 
 func NewEngine(cfg *config.Config, database *db.DB) *Engine {
@@ -137,6 +140,11 @@ func (e *Engine) CachedBriefing() *DailyBriefing {
 }
 
 func (e *Engine) GenerateDailyBriefing(ctx context.Context, eventsJSON, weatherJSON, cashJSON string, refresh bool) (*DailyBriefing, error) {
+	// Single-flight across every caller (scheduler + HTTP handlers): concurrent
+	// triggers queue here instead of each firing their own provider call.
+	e.briefingMu.Lock()
+	defer e.briefingMu.Unlock()
+
 	cacheKey := e.briefingCacheKey()
 
 	if !refresh {

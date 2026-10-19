@@ -60,51 +60,102 @@ func (p *OpenAIProvider) setAuth(req *http.Request) {
 	}
 }
 
+// candidatePrefixes orders the API-mount guesses. If the configured URL
+// already ends in /v1 the API is mounted there directly.
+func (p *OpenAIProvider) candidatePrefixes() []string {
+	if strings.HasSuffix(p.baseURL, "/v1") {
+		return []string{"", "/v1"}
+	}
+	return []string{"/v1", ""}
+}
+
 // detectPrefix finds where the server exposes its API. Most OpenAI-compatible
-// servers live under /v1; some gateways mount the API at the root.
+// servers live under /v1; some gateways mount the API at the root, and some
+// only implement /chat/completions while serving their web UI (HTML) for
+// every other path — so an unusable /models response is not conclusive and
+// we fall back to a zero-cost POST probe of chat/completions.
 func (p *OpenAIProvider) detectPrefix(ctx context.Context) (string, error) {
 	if p.apiPrefix != "" {
 		return p.apiPrefix, nil
 	}
 
-	prefixes := []string{"/v1", ""}
 	var lastErr string
-	for _, prefix := range prefixes {
-		healthCtx, cancel := context.WithTimeout(ctx, openaiHealthTimeout)
-		req, err := http.NewRequestWithContext(healthCtx, http.MethodGet, p.baseURL+prefix+"/models", nil)
-		if err != nil {
-			cancel()
-			return "", err
+	for _, prefix := range p.candidatePrefixes() {
+		ok, err := p.probePrefix(ctx, prefix)
+		if ok {
+			p.apiPrefix = prefix
+			return prefix, nil
 		}
-		p.setAuth(req)
-		resp, err := p.healthClient.Do(req)
-		cancel()
-		if err != nil {
-			lastErr = err.Error()
-			continue
-		}
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-
-		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-			lastErr = fmt.Sprintf("%s returned %d — check your API key", p.baseURL+prefix+"/models", resp.StatusCode)
-			continue
-		}
-		if resp.StatusCode != http.StatusOK {
-			lastErr = fmt.Sprintf("%s returned %d", p.baseURL+prefix+"/models", resp.StatusCode)
-			continue
-		}
-
-		trimmed := strings.TrimSpace(string(body))
-		if len(trimmed) == 0 || (trimmed[0] != '{' && trimmed[0] != '[') {
-			lastErr = fmt.Sprintf("%s returned HTML instead of JSON — this may be a login page; check your API key", p.baseURL+prefix+"/models")
-			continue
-		}
-
-		p.apiPrefix = prefix
-		return prefix, nil
+		lastErr = err
 	}
 	return "", fmt.Errorf("%s", lastErr)
+}
+
+// probePrefix reports whether an OpenAI-compatible API is mounted at prefix.
+func (p *OpenAIProvider) probePrefix(ctx context.Context, prefix string) (bool, string) {
+	healthCtx, cancel := context.WithTimeout(ctx, openaiHealthTimeout)
+	defer cancel()
+
+	modelsNote := "unreachable"
+	modelsURL := p.baseURL + prefix + "/models"
+	req, err := http.NewRequestWithContext(healthCtx, http.MethodGet, modelsURL, nil)
+	if err != nil {
+		return false, err.Error()
+	}
+	p.setAuth(req)
+	if resp, err := p.healthClient.Do(req); err == nil {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK && isJSONBody(body) {
+			return true, ""
+		}
+		modelsNote = fmt.Sprintf("HTTP %d (%s)", resp.StatusCode, firstWord(body))
+	}
+
+	// /models is unusable (404, HTML login page, SPA fallback...). A real
+	// OpenAI-compatible endpoint answers POST /chat/completions with JSON —
+	// usually a 400 about the empty body; a web UI answers with HTML.
+	chatURL := p.baseURL + prefix + "/chat/completions"
+	chatReq, err := http.NewRequestWithContext(healthCtx, http.MethodPost, chatURL, strings.NewReader("{}"))
+	if err != nil {
+		return false, err.Error()
+	}
+	chatReq.Header.Set("Content-Type", "application/json")
+	p.setAuth(chatReq)
+	chatResp, err := p.healthClient.Do(chatReq)
+	if err != nil {
+		return false, fmt.Sprintf("%s is not reachable: %v", chatURL, err)
+	}
+	chatBody, _ := io.ReadAll(chatResp.Body)
+	chatResp.Body.Close()
+
+	if isJSONBody(chatBody) {
+		switch chatResp.StatusCode {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			return false, fmt.Sprintf("%s/chat/completions rejected the API key (HTTP %d)", p.baseURL+prefix, chatResp.StatusCode)
+		case http.StatusNotFound, http.StatusMethodNotAllowed:
+			return false, fmt.Sprintf("%s/chat/completions does not exist at this mount (HTTP %d)", p.baseURL+prefix, chatResp.StatusCode)
+		}
+		return true, ""
+	}
+	return false, fmt.Sprintf("%s does not look like an API endpoint: /models returned %s and /chat/completions returned HTTP %d of non-JSON (%s) — the URL may point at the server's web UI instead of its API",
+		p.baseURL+prefix, modelsNote, chatResp.StatusCode, firstWord(chatBody))
+}
+
+func firstWord(b []byte) string {
+	s := strings.TrimSpace(string(b))
+	if i := strings.IndexAny(s, " \n<{"); i > 0 {
+		s = s[:i]
+	}
+	if len(s) > 40 {
+		s = s[:40]
+	}
+	return s
+}
+
+func isJSONBody(b []byte) bool {
+	s := strings.TrimSpace(string(b))
+	return len(s) > 0 && (s[0] == '{' || s[0] == '[')
 }
 
 func (p *OpenAIProvider) Available(ctx context.Context) bool {
@@ -154,6 +205,9 @@ func (p *OpenAIProvider) ListModels(ctx context.Context) ([]string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("models endpoint returned %d: %s", resp.StatusCode, snippet(body))
 	}
+	if !isJSONBody(body) {
+		return nil, fmt.Errorf("this server does not expose a model list — enter the model name manually")
+	}
 
 	var parsed openaiModelsResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
@@ -195,13 +249,30 @@ type openaiChatResponse struct {
 	} `json:"error"`
 }
 
+func (p *OpenAIProvider) postChat(ctx context.Context, prefix string, payload []byte) ([]byte, int, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+prefix+"/chat/completions", bytes.NewReader(payload))
+	if err != nil {
+		return nil, 0, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	p.setAuth(httpReq)
+
+	resp, err := p.client.Do(httpReq)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return body, resp.StatusCode, nil
+}
+
 func (p *OpenAIProvider) Complete(ctx context.Context, req CompletionRequest) (*CompletionResponse, error) {
 	prefix, err := p.detectPrefix(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("openai endpoint unreachable: %w", err)
 	}
 
-	body, err := json.Marshal(openaiChatRequest{
+	payload, err := json.Marshal(openaiChatRequest{
 		Model:            p.model,
 		Messages:         openaiMessages(req),
 		MaxTokens:        req.MaxTokens,
@@ -212,22 +283,26 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req CompletionRequest) (*
 		return nil, err
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+prefix+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	p.setAuth(httpReq)
-
-	resp, err := p.client.Do(httpReq)
+	respBody, status, err := p.postChat(ctx, prefix, payload)
 	if err != nil {
 		return nil, fmt.Errorf("chat completion request failed: %w", err)
 	}
-	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("chat completion returned %d: %s", resp.StatusCode, snippet(respBody))
+	// If the mount guess produced a 404 or an HTML page (SPA fallback), flip
+	// the prefix once and retry before giving up.
+	if status == http.StatusNotFound || !isJSONBody(respBody) {
+		alt := "/v1"
+		if prefix == "/v1" {
+			alt = ""
+		}
+		if altBody, altStatus, altErr := p.postChat(ctx, alt, payload); altErr == nil && altStatus == http.StatusOK && isJSONBody(altBody) {
+			p.apiPrefix = alt
+			respBody, status = altBody, altStatus
+		}
+	}
+
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("chat completion returned %d: %s", status, snippet(respBody))
 	}
 
 	var parsed openaiChatResponse

@@ -21,6 +21,7 @@ const KIND_LABELS: Record<ProviderKind, string> = {
 interface TestResult {
   ok: boolean;
   error?: string;
+  note?: string;
   models?: string[];
 }
 
@@ -38,6 +39,7 @@ export function AIProviderSettings() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editModels, setEditModels] = useState<string[]>([]);
+  const [editModelValue, setEditModelValue] = useState('');
   const [editLoading, setEditLoading] = useState(false);
 
   const load = () => {
@@ -104,8 +106,9 @@ export function AIProviderSettings() {
     load();
   };
 
-  const startEditModel = async (id: string) => {
+  const startEditModel = async (id: string, current: string) => {
     setEditingId(id);
+    setEditModelValue(current);
     setEditLoading(true);
     try {
       const models = await api.get<string[]>(`/api/ai/providers/${id}/models`);
@@ -175,15 +178,26 @@ export function AIProviderSettings() {
                 <span className="text-text-dim text-sm">Loading models...</span>
               ) : (
                 <>
-                  <select
-                    value={p.model}
-                    onChange={(e) => saveModel(p.id, e.target.value)}
+                  <input
+                    type="text"
+                    value={editModelValue}
+                    onChange={(e) => setEditModelValue(e.target.value)}
+                    list={`ai-edit-model-options-${p.id}`}
+                    placeholder="model name"
                     className="flex-1 bg-surface text-text-bright rounded-lg px-3 py-2 text-sm outline-none"
-                  >
+                  />
+                  <datalist id={`ai-edit-model-options-${p.id}`}>
                     {editModels.map((m) => (
-                      <option key={m} value={m}>{m}</option>
+                      <option key={m} value={m} />
                     ))}
-                  </select>
+                  </datalist>
+                  <button
+                    onClick={() => saveModel(p.id, editModelValue)}
+                    disabled={!editModelValue}
+                    className="text-accent-green text-sm disabled:opacity-50"
+                  >
+                    Save
+                  </button>
                   <button onClick={() => setEditingId(null)} className="text-text-dim text-sm">
                     Cancel
                   </button>
@@ -196,7 +210,7 @@ export function AIProviderSettings() {
                 Model: <span className="text-text-bright">{p.model || 'not set'}</span>
               </p>
               <button
-                onClick={() => startEditModel(p.id)}
+                onClick={() => startEditModel(p.id, p.model)}
                 className="text-primary-light text-xs font-medium"
               >
                 Change Model
@@ -270,20 +284,28 @@ export function AIProviderSettings() {
             <p className="text-accent-red text-sm">{testResult.error}</p>
           )}
 
-          {testResult?.ok && testResult.models && (
+          {testResult?.ok && (
             <div className="space-y-2">
-              <p className="text-accent-green text-sm">Connected — {testResult.models.length} model(s) available</p>
+              <p className="text-accent-green text-sm">
+                {testResult.models && testResult.models.length > 0
+                  ? `Connected — ${testResult.models.length} model(s) available`
+                  : (testResult.note || 'Connected')}
+              </p>
               <div>
                 <label className="block text-sm text-text-dim mb-1">Model</label>
-                <select
+                <input
+                  type="text"
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
+                  list="ai-new-model-options"
+                  placeholder={testResult.models && testResult.models.length > 0 ? '' : 'type the model name'}
                   className="w-full bg-surface text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
-                >
-                  {testResult.models.map((m) => (
-                    <option key={m} value={m}>{m}</option>
+                />
+                <datalist id="ai-new-model-options">
+                  {(testResult.models ?? []).map((m) => (
+                    <option key={m} value={m} />
                   ))}
-                </select>
+                </datalist>
               </div>
 
               <div className="flex gap-2">

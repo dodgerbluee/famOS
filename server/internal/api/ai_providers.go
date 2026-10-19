@@ -180,6 +180,17 @@ func (h *AIProvidersHandler) TestConnection(w http.ResponseWriter, r *http.Reque
 	provider := ai.NewProvider(req.Kind, req.URL, "", req.APIKey)
 	models, err := provider.ListModels(r.Context())
 	if err != nil {
+		// Some gateways only implement /chat/completions and expose no model
+		// list; fall back to a reachability check so the user can still save
+		// the provider and type the model name manually.
+		if provider.Available(r.Context()) {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"ok":     true,
+				"models": []string{},
+				"note":   "Connected, but this server does not list models — enter the model name manually.",
+			})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":     false,
 			"error":  err.Error(),

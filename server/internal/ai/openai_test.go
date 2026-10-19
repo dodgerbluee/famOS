@@ -97,6 +97,60 @@ func TestOpenAIBadKeyReportsCheckYourAPIKey(t *testing.T) {
 	}
 }
 
+// Some gateways only implement /chat/completions and serve their web UI
+// (HTML) for every other path, including /models. Detection must fall back
+// to a POST probe instead of declaring the endpoint unreachable.
+func TestOpenAIChatOnlyGatewayWithHTMLModelsPage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte("<!DOCTYPE html><html><head><title>Gateway UI</title></head></html>"))
+		case "/v1/chat/completions":
+			if r.Method != http.MethodPost {
+				http.NotFound(w, r)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{
+					{"message": map[string]string{"role": "assistant", "content": `{"summary":"hi"}`}, "finish_reason": "stop"},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	p := NewOpenAIProvider(srv.URL, "some-model", "secret-key")
+	resp, err := p.Complete(context.Background(), CompletionRequest{Prompt: "hello"})
+	if err != nil {
+		t.Fatalf("Complete against chat-only gateway: %v", err)
+	}
+	if resp.Text == "" {
+		t.Fatal("expected non-empty completion text")
+	}
+	if !p.Available(context.Background()) {
+		t.Fatal("chat-only gateway should report Available")
+	}
+}
+
+// A POST of an empty body to a real OpenAI-compatible endpoint answers with
+// a JSON error; an HTML answer at both paths means the URL is wrong.
+func TestOpenAIWebUIURLIsRejected(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte("<!DOCTYPE html><html>SPA fallback</html>"))
+	}))
+	defer srv.Close()
+
+	p := NewOpenAIProvider(srv.URL, "some-model", "")
+	_, err := p.Complete(context.Background(), CompletionRequest{Prompt: "hello"})
+	if err == nil {
+		t.Fatal("expected error when server serves HTML everywhere")
+	}
+}
+
 func TestOpenAIEmptyContentIsAnError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/sandershome/server/internal/ai"
@@ -17,8 +16,6 @@ type AIHandler struct {
 	cal      *service.CalendarService
 	cash     *service.SandersCashService
 	location *time.Location
-
-	briefingMu sync.Mutex // one briefing generation at a time
 }
 
 func NewAIHandler(engine *ai.Engine, weather *service.WeatherService, cal *service.CalendarService, cash *service.SandersCashService, location *time.Location) *AIHandler {
@@ -45,18 +42,8 @@ func (h *AIHandler) RegenerateDailyBriefing(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *AIHandler) generateDailyBriefing(w http.ResponseWriter, r *http.Request, refresh bool) {
-	// Fast path: a cached briefing needs neither the lock nor the provider.
-	if !refresh {
-		if b := h.engine.CachedBriefing(); b != nil {
-			writeJSON(w, http.StatusOK, b)
-			return
-		}
-	}
-
-	// Single-flight: concurrent page loads (kiosk + phones) share one
-	// generation instead of each firing their own provider call.
-	h.briefingMu.Lock()
-	defer h.briefingMu.Unlock()
+	// Fast path: a cached briefing never touches the provider. Generation
+	// itself is single-flight inside the engine (shared with the scheduler).
 	if !refresh {
 		if b := h.engine.CachedBriefing(); b != nil {
 			writeJSON(w, http.StatusOK, b)
