@@ -28,10 +28,10 @@ func NewEngine(cfg *config.Config, database *db.DB) *Engine {
 }
 
 func (e *Engine) loadActiveProvider(cfg *config.Config) {
-	var url, apiKey, model string
-	err := e.db.QueryRow(`SELECT url, api_key, model FROM ai_providers WHERE active = 1 LIMIT 1`).Scan(&url, &apiKey, &model)
+	var url, apiKey, model, kind string
+	err := e.db.QueryRow(`SELECT url, api_key, model, COALESCE(kind, 'ollama') FROM ai_providers WHERE active = 1 LIMIT 1`).Scan(&url, &apiKey, &model, &kind)
 	if err == nil && url != "" {
-		e.provider = NewOllamaProviderWithKey(url, model, apiKey)
+		e.provider = NewProvider(kind, url, model, apiKey)
 		return
 	}
 	e.provider = NewOllamaProvider(cfg.OllamaURL, cfg.OllamaModel)

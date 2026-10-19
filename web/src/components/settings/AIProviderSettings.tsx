@@ -7,8 +7,16 @@ interface AIProvider {
   url: string;
   apiKey: string;
   model: string;
+  kind: string;
   active: boolean;
 }
+
+type ProviderKind = 'ollama' | 'openai';
+
+const KIND_LABELS: Record<ProviderKind, string> = {
+  ollama: 'Ollama',
+  openai: 'OpenAI-compatible',
+};
 
 interface TestResult {
   ok: boolean;
@@ -20,6 +28,7 @@ export function AIProviderSettings() {
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
+  const [newKind, setNewKind] = useState<ProviderKind>('ollama');
   const [newUrl, setNewUrl] = useState('');
   const [newApiKey, setNewApiKey] = useState('');
   const [testing, setTesting] = useState(false);
@@ -44,6 +53,7 @@ export function AIProviderSettings() {
       const res = await api.post<TestResult>('/api/ai/providers/test', {
         url: newUrl,
         apiKey: newApiKey,
+        kind: newKind,
       });
       setTestResult(res);
       if (res.ok && res.models && res.models.length > 0) {
@@ -63,6 +73,7 @@ export function AIProviderSettings() {
         name: newName || 'AI Provider',
         url: newUrl,
         apiKey: newApiKey,
+        kind: newKind,
       });
       const active = true;
       await api.put(`/api/ai/providers/${id}`, { model: selectedModel, active });
@@ -76,6 +87,7 @@ export function AIProviderSettings() {
   const resetForm = () => {
     setAdding(false);
     setNewName('');
+    setNewKind('ollama');
     setNewUrl('');
     setNewApiKey('');
     setTestResult(null);
@@ -129,7 +141,12 @@ export function AIProviderSettings() {
         <div key={p.id} className="bg-surface-lighter rounded-xl p-4 space-y-2">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-text-bright font-medium">{p.name}</p>
+              <p className="text-text-bright font-medium">
+                {p.name}
+                <span className="ml-2 text-text-dim text-xs bg-surface px-2 py-0.5 rounded-lg">
+                  {KIND_LABELS[p.kind as ProviderKind] ?? p.kind}
+                </span>
+              </p>
               <p className="text-text-dim text-xs">{p.url}</p>
             </div>
             <div className="flex items-center gap-2">
@@ -201,9 +218,21 @@ export function AIProviderSettings() {
               type="text"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="e.g. Ollama, Open WebUI"
+              placeholder="e.g. Ollama, Strata, Open WebUI"
               className="w-full bg-surface text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm text-text-dim mb-1">Provider Type</label>
+            <select
+              value={newKind}
+              onChange={(e) => { setNewKind(e.target.value as ProviderKind); setTestResult(null); }}
+              className="w-full bg-surface text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="ollama">Ollama (or Open WebUI proxy)</option>
+              <option value="openai">OpenAI-compatible API (OpenAI, Strata, vLLM, ...)</option>
+            </select>
           </div>
 
           <div>
@@ -212,7 +241,7 @@ export function AIProviderSettings() {
               type="url"
               value={newUrl}
               onChange={(e) => { setNewUrl(e.target.value); setTestResult(null); }}
-              placeholder="http://localhost:11434"
+              placeholder={newKind === 'openai' ? 'https://api.example.com/v1' : 'http://localhost:11434'}
               className="w-full bg-surface text-text-bright rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-primary"
             />
           </div>

@@ -26,11 +26,12 @@ type aiProviderRow struct {
 	URL    string `json:"url"`
 	APIKey string `json:"apiKey"`
 	Model  string `json:"model"`
+	Kind   string `json:"kind"`
 	Active bool   `json:"active"`
 }
 
 func (h *AIProvidersHandler) List(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.db.Query(`SELECT id, name, url, api_key, model, active FROM ai_providers ORDER BY created_at`)
+	rows, err := h.db.Query(`SELECT id, name, url, api_key, model, COALESCE(kind, 'ollama'), active FROM ai_providers ORDER BY created_at`)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -41,7 +42,7 @@ func (h *AIProvidersHandler) List(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var p aiProviderRow
 		var active int
-		if err := rows.Scan(&p.ID, &p.Name, &p.URL, &p.APIKey, &p.Model, &active); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.URL, &p.APIKey, &p.Model, &p.Kind, &active); err != nil {
 			continue
 		}
 		p.Active = active == 1
@@ -57,6 +58,7 @@ type createProviderReq struct {
 	Name   string `json:"name"`
 	URL    string `json:"url"`
 	APIKey string `json:"apiKey"`
+	Kind   string `json:"kind"`
 }
 
 func (h *AIProvidersHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -72,11 +74,18 @@ func (h *AIProvidersHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.Name == "" {
 		req.Name = "AI Provider"
 	}
+	if req.Kind == "" {
+		req.Kind = "ollama"
+	}
+	if req.Kind != "ollama" && req.Kind != "openai" {
+		writeError(w, http.StatusBadRequest, "kind must be ollama or openai")
+		return
+	}
 
 	id := uuid.NewString()
 	_, err := h.db.Exec(
-		`INSERT INTO ai_providers (id, name, url, api_key) VALUES (?, ?, ?, ?)`,
-		id, req.Name, req.URL, req.APIKey,
+		`INSERT INTO ai_providers (id, name, url, api_key, kind) VALUES (?, ?, ?, ?, ?)`,
+		id, req.Name, req.URL, req.APIKey, req.Kind,
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -91,6 +100,7 @@ type updateProviderReq struct {
 	URL    *string `json:"url,omitempty"`
 	APIKey *string `json:"apiKey,omitempty"`
 	Model  *string `json:"model,omitempty"`
+	Kind   *string `json:"kind,omitempty"`
 	Active *bool   `json:"active,omitempty"`
 }
 
@@ -128,6 +138,13 @@ func (h *AIProvidersHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.Model != nil {
 		tx.Exec(`UPDATE ai_providers SET model = ? WHERE id = ?`, *req.Model, id)
 	}
+	if req.Kind != nil {
+		if *req.Kind != "ollama" && *req.Kind != "openai" {
+			writeError(w, http.StatusBadRequest, "kind must be ollama or openai")
+			return
+		}
+		tx.Exec(`UPDATE ai_providers SET kind = ? WHERE id = ?`, *req.Kind, id)
+	}
 
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -153,19 +170,20 @@ func (h *AIProvidersHandler) TestConnection(w http.ResponseWriter, r *http.Reque
 	var req struct {
 		URL    string `json:"url"`
 		APIKey string `json:"apiKey"`
+		Kind   string `json:"kind"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	provider := ai.NewOllamaProviderWithKey(req.URL, "", req.APIKey)
+	provider := ai.NewProvider(req.Kind, req.URL, "", req.APIKey)
 	models, err := provider.ListModels(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"ok":      false,
-			"error":   err.Error(),
-			"models":  []string{},
+			"ok":     false,
+			"error":  err.Error(),
+			"models": []string{},
 		})
 		return
 	}
@@ -177,13 +195,13 @@ func (h *AIProvidersHandler) TestConnection(w http.ResponseWriter, r *http.Reque
 
 func (h *AIProvidersHandler) ListModels(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	var url, apiKey string
-	err := h.db.QueryRow(`SELECT url, api_key FROM ai_providers WHERE id = ?`, id).Scan(&url, &apiKey)
+	var url, apiKey, kind string
+	err := h.db.QueryRow(`SELECT url, api_key, COALESCE(kind, 'ollama') FROM ai_providers WHERE id = ?`, id).Scan(&url, &apiKey, &kind)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "provider not found")
 		return
 	}
-	provider := ai.NewOllamaProviderWithKey(url, "", apiKey)
+	provider := ai.NewProvider(kind, url, "", apiKey)
 	models, err := provider.ListModels(r.Context())
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())

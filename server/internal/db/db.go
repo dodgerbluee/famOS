@@ -86,6 +86,9 @@ func (d *DB) Migrate() error {
 	addColumnIfNotExists(d, "sessions", "last_seen_at", "DATETIME")
 	addColumnIfNotExists(d, "sessions", "user_agent", "TEXT DEFAULT ''")
 
+	// AI provider kind (ollama | openai) for multi-strategy support
+	addColumnIfNotExists(d, "ai_providers", "kind", "TEXT NOT NULL DEFAULT 'ollama'")
+
 	ensureFamiliesForMembers(d)
 
 	// Promote first parent to admin if no admin exists
@@ -412,6 +415,7 @@ CREATE TABLE IF NOT EXISTS ai_providers (
 	url TEXT NOT NULL,
 	api_key TEXT NOT NULL DEFAULT '',
 	model TEXT NOT NULL DEFAULT '',
+	kind TEXT NOT NULL DEFAULT 'ollama',
 	active INTEGER NOT NULL DEFAULT 0,
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
