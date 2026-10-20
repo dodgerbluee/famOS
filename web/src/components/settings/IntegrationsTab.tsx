@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, type Camera } from '../../api/client';
 import { AIProviderSettings } from './AIProviderSettings';
+import { ImmichSourcesSettings } from './ImmichSourcesSettings';
 import { useCurrencyName, invalidateCurrencyNameCache } from '../../hooks/useCurrencyName';
 
 type Settings = Record<string, string>;
@@ -59,12 +60,9 @@ export function IntegrationsTab() {
   const [vikunjaApiKey, setVikunjaApiKey] = useState('');
   const [vikunjaProjects, setVikunjaProjects] = useState<{ id: number; title: string }[]>([]);
   const [vikunjaExcludedProjects, setVikunjaExcludedProjects] = useState<number[]>([]);
-  const [immichUrl, setImmichUrl] = useState('');
-  const [immichApiKey, setImmichApiKey] = useState('');
-  const [screensaverAlbumId, setScreensaverAlbumId] = useState('');
   const [screensaverTimeout, setScreensaverTimeout] = useState('300');
-  const [immichTesting, setImmichTesting] = useState(false);
-  const [immichTestResult, setImmichTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [timeoutSaving, setTimeoutSaving] = useState(false);
+  const [timeoutSaved, setTimeoutSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -115,9 +113,6 @@ export function IntegrationsTab() {
         const ids = JSON.parse(s.vikunja_excluded_projects || '[]');
         if (Array.isArray(ids)) setVikunjaExcludedProjects(ids);
       } catch { /* use default */ }
-      setImmichUrl(s.immich_url || '');
-      setImmichApiKey(s.immich_api_key || '');
-      setScreensaverAlbumId(s.screensaver_album_id || '');
       setScreensaverTimeout(s.screensaver_timeout || '300');
       if (s.sanders_cash_presets) {
         try {
@@ -145,8 +140,7 @@ export function IntegrationsTab() {
         gatus_url: gatusUrl, seerr_url: seerrUrl, seerr_api_key: seerrApiKey,
         vikunja_url: vikunjaUrl, vikunja_api_key: vikunjaApiKey,
         vikunja_excluded_projects: JSON.stringify(vikunjaExcludedProjects),
-        immich_url: immichUrl, immich_api_key: immichApiKey,
-        screensaver_album_id: screensaverAlbumId, screensaver_timeout: screensaverTimeout,
+        screensaver_timeout: screensaverTimeout,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -240,6 +234,18 @@ export function IntegrationsTab() {
       setTimeout(() => setFamilySaved(false), 3000);
     } finally {
       setFamilySaving(false);
+    }
+  };
+
+  const saveTimeout = async () => {
+    setTimeoutSaving(true);
+    setTimeoutSaved(false);
+    try {
+      await api.put('/api/settings', { screensaver_timeout: screensaverTimeout });
+      setTimeoutSaved(true);
+      setTimeout(() => setTimeoutSaved(false), 3000);
+    } finally {
+      setTimeoutSaving(false);
     }
   };
 
@@ -503,45 +509,26 @@ export function IntegrationsTab() {
 
       case 'immich':
         return (
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-text-bright">Immich Screensaver</h3>
+          <div className="space-y-5">
             <div>
-              <label className="block text-sm text-text-dim mb-1">Immich URL</label>
-              <input type="url" value={immichUrl} onChange={(e) => setImmichUrl(e.target.value)} placeholder="https://immich.example.com" className={inputClass} />
+              <h3 className="text-lg font-semibold text-text-bright mb-3">Immich Albums</h3>
+              <ImmichSourcesSettings />
             </div>
-            <div>
-              <label className="block text-sm text-text-dim mb-1">API Key</label>
-              <input type="password" value={immichApiKey} onChange={(e) => setImmichApiKey(e.target.value)} placeholder="From Immich > Account Settings > API Keys" className={inputClass} />
-            </div>
-            <div>
-              <label className="block text-sm text-text-dim mb-1">Album ID</label>
-              <input type="text" value={screensaverAlbumId} onChange={(e) => setScreensaverAlbumId(e.target.value)} placeholder="UUID from Immich album URL" className={inputClass} />
-            </div>
-            <div>
-              <label className="block text-sm text-text-dim mb-1">Screensaver Timeout (seconds)</label>
-              <input type="number" min={0} value={screensaverTimeout} onChange={(e) => setScreensaverTimeout(e.target.value)} placeholder="300" className={inputClass} />
-            </div>
-            <div className="flex gap-2 items-center flex-wrap">
-              {saveBtn(saveAll, saving, saved, 'Save Settings')}
-              <button
-                onClick={async () => {
-                  setImmichTesting(true);
-                  setImmichTestResult(null);
-                  try {
-                    const result = await api.post<{ ok: boolean; message: string }>('/api/immich/test', {});
-                    setImmichTestResult(result);
-                  } catch {
-                    setImmichTestResult({ ok: false, message: 'Request failed' });
-                  } finally {
-                    setImmichTesting(false);
-                  }
-                }}
-                disabled={immichTesting}
-                className="bg-surface-lighter text-text-bright px-4 py-2 rounded-xl font-medium min-h-[44px] active:scale-95 transition-transform disabled:opacity-50"
-              >
-                {immichTesting ? 'Testing...' : 'Test Connection'}
-              </button>
-              {immichTestResult && <span className={`text-sm ${immichTestResult.ok ? 'text-accent-green' : 'text-accent-red'}`}>{immichTestResult.message}</span>}
+            <div className="border-t border-surface-lighter pt-4">
+              <h4 className="text-sm font-medium text-text-dim uppercase tracking-wide mb-2">Screensaver</h4>
+              <label className="block text-sm text-text-dim mb-1">Idle Timeout (seconds)</label>
+              <div className="flex gap-2 items-center flex-wrap">
+                <input
+                  type="number"
+                  min={0}
+                  value={screensaverTimeout}
+                  onChange={(e) => setScreensaverTimeout(e.target.value)}
+                  placeholder="300"
+                  className={`${inputClass} max-w-[12rem]`}
+                />
+                {saveBtn(saveTimeout, timeoutSaving, timeoutSaved, 'Save Timeout')}
+              </div>
+              <p className="text-text-dim text-xs mt-1">Set to 0 to disable the screensaver.</p>
             </div>
           </div>
         );

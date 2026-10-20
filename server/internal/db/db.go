@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -89,6 +90,9 @@ func (d *DB) Migrate() error {
 	// AI provider kind (ollama | openai) for multi-strategy support
 	addColumnIfNotExists(d, "ai_providers", "kind", "TEXT NOT NULL DEFAULT 'ollama'")
 
+	// Seed immich_sources from the legacy single-album config (once)
+	seedImmichSourcesIfNeeded(d)
+
 	ensureFamiliesForMembers(d)
 
 	// Promote first parent to admin if no admin exists
@@ -111,6 +115,38 @@ func (d *DB) Migrate() error {
 	d.Exec(`CREATE INDEX IF NOT EXISTS idx_oauth_providers_enabled ON oauth_providers(enabled)`)
 
 	return nil
+}
+
+// seedImmichSourcesIfNeeded migrates the legacy single Immich config
+// (immich_url / immich_api_key / screensaver_album_id in app_settings) into a
+// row in the new immich_sources table. Runs only when no sources exist yet, so
+// it is safe to re-run and never clobbers sources the user has already added.
+func seedImmichSourcesIfNeeded(d *DB) {
+	var count int
+	if err := d.QueryRow(`SELECT COUNT(*) FROM immich_sources`).Scan(&count); err != nil || count > 0 {
+		return
+	}
+
+	readSetting := func(key string) string {
+		var raw string
+		if err := d.QueryRow(`SELECT value FROM app_settings WHERE key = ?`, key).Scan(&raw); err != nil {
+			return ""
+		}
+		var s string
+		if err := json.Unmarshal([]byte(raw), &s); err != nil {
+			s = raw
+		}
+		return strings.Trim(strings.TrimSpace(s), `"`)
+	}
+
+	url := readSetting("immich_url")
+	if url == "" {
+		return
+	}
+	d.Exec(
+		`INSERT INTO immich_sources (id, name, url, api_key, album_id) VALUES (?, ?, ?, ?, ?)`,
+		"legacy", "Immich", url, readSetting("immich_api_key"), readSetting("screensaver_album_id"),
+	)
 }
 
 // ensureFamiliesForMembers creates families rows for household members that
@@ -407,6 +443,16 @@ CREATE TABLE IF NOT EXISTS ai_cache (
 CREATE TABLE IF NOT EXISTS app_settings (
 	key TEXT PRIMARY KEY,
 	value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS immich_sources (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL DEFAULT '',
+	url TEXT NOT NULL,
+	api_key TEXT NOT NULL DEFAULT '',
+	album_id TEXT NOT NULL DEFAULT '',
+	enabled INTEGER NOT NULL DEFAULT 1,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS ai_providers (

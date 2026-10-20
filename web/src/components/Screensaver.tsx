@@ -8,6 +8,7 @@ interface ImmichAsset {
   id: string;
   type: string;
   createdAt?: string;
+  sourceId: string;
 }
 
 const DISPLAY_INTERVAL = 20000;
@@ -67,7 +68,7 @@ export function Screensaver() {
         lastShownRef.current = shuffled[0]?.id ?? null;
         albumFetchedAt.current = Date.now();
         if (shuffled[0]) {
-          const url = immichAssetUrl(shuffled[0].id, 'preview');
+          const url = immichAssetUrl(shuffled[0].id, shuffled[0].sourceId, 'preview');
           setSrcA(url);
           setFront('a');
         }
@@ -104,7 +105,7 @@ export function Screensaver() {
   }, [isIdle, photos.length]);
 
   const showPhoto = (asset: ImmichAsset, index: number) => {
-    const url = immichAssetUrl(asset.id, 'preview');
+    const url = immichAssetUrl(asset.id, asset.sourceId, 'preview');
     if (front === 'a') {
       setSrcB(url);
       setFront('b');
@@ -140,7 +141,7 @@ export function Screensaver() {
     }
 
     try {
-      await preloadImage(immichAssetUrl(next.id, 'preview'));
+      await preloadImage(immichAssetUrl(next.id, next.sourceId, 'preview'));
     } catch {
       inflightRef.current = false;
       scheduleNext();
@@ -159,7 +160,7 @@ export function Screensaver() {
     const prev = photosRef.current[prevIndex];
     if (!prev) return;
     try {
-      await preloadImage(immichAssetUrl(prev.id, 'preview'));
+      await preloadImage(immichAssetUrl(prev.id, prev.sourceId, 'preview'));
     } catch {
       return;
     }

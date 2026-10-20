@@ -410,6 +410,6 @@ export interface DashboardPayload {
   errors: Record<string, string>;
 }
 
-export function immichAssetUrl(id: string, size: 'preview' | 'thumbnail' = 'preview') {
-  return `/api/immich/assets/${id}?size=${size}`;
+export function immichAssetUrl(id: string, sourceId: string, size: 'preview' | 'thumbnail' = 'preview') {
+  return `/api/immich/assets/${id}?source=${encodeURIComponent(sourceId)}&size=${size}`;
 }

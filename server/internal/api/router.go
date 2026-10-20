@@ -283,8 +283,13 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 		// Uploads
 		r.Post("/api/uploads", uploadsHandler.Upload)
 
-		// Immich test
-		r.With(auth.RequirePermission("settings.edit")).Post("/api/immich/test", immichHandler.Test)
+		// Immich album sources (multi-album / multi-account screensaver)
+		r.With(auth.RequirePermission("settings.edit")).Get("/api/immich/sources", immichHandler.ListSources)
+		r.With(auth.RequirePermission("settings.edit")).Post("/api/immich/sources", immichHandler.CreateSource)
+		r.With(auth.RequirePermission("settings.edit")).Put("/api/immich/sources/{id}", immichHandler.UpdateSource)
+		r.With(auth.RequirePermission("settings.edit")).Delete("/api/immich/sources/{id}", immichHandler.DeleteSource)
+		r.With(auth.RequirePermission("settings.edit")).Post("/api/immich/sources/test", immichHandler.TestConfig)
+		r.With(auth.RequirePermission("settings.edit")).Post("/api/immich/sources/{id}/test", immichHandler.TestSource)
 
 		r.With(auth.RequirePermission("settings.edit")).Get("/api/admin/oauth-providers", oauthAdminHandler.List)
 		r.With(auth.RequirePermission("settings.edit")).Post("/api/admin/oauth-providers", oauthAdminHandler.Create)
