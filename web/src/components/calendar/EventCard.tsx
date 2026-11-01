@@ -31,11 +31,11 @@ export const EventCard = memo(function EventCard({ event, compact, onSelect, ref
   return (
     <button
       onClick={() => onSelect?.(event)}
-      className={`rounded-lg flex w-full text-left ${compact ? 'gap-1.5 py-1 px-1.5' : 'gap-3 p-3 bg-surface-light rounded-xl'} ${visualState === 'muted' ? 'opacity-45' : ''} ${visualState === 'highlight' ? 'ring-1 ring-accent-yellow/50 bg-accent-yellow/10' : ''} ${onSelect ? 'active:scale-[0.98] transition-transform' : ''}`}
+      className={`flex w-full text-left ${compact ? 'gap-1.5 rounded-lg px-1.5 py-1' : 'gap-3 rounded-xl border border-border-subtle bg-gradient-to-br from-surface-light to-surface p-3 shadow-md shadow-black/10 hover:border-border hover:shadow-lg'} ${visualState === 'muted' ? 'opacity-45' : ''} ${visualState === 'highlight' ? 'ring-1 ring-accent-yellow/50 bg-accent-yellow/10' : ''} ${onSelect ? 'active:scale-[0.98] transition-all' : ''}`}
     >
       <div
-        className={`rounded-full flex-shrink-0 ${compact ? 'w-0.5' : 'w-1'}`}
-        style={{ backgroundColor: event.sourceColor || '#6366f1' }}
+        className={`flex-shrink-0 rounded-full ${compact ? 'w-0.5' : 'w-1 shadow-[0_0_12px_currentColor]'}`}
+        style={{ backgroundColor: event.sourceColor || '#6366f1', color: event.sourceColor || '#6366f1' }}
       />
       <div className="flex-1 min-w-0">
         <p className={`font-medium truncate ${visualState === 'muted' ? 'text-text-dim' : 'text-text-bright'} ${compact ? 'text-xs' : ''}`}>

@@ -30,7 +30,10 @@ services:
     restart: unless-stopped
 
   web:
-    build: ./web
+    build:
+      context: ./web
+      args:
+        APP_VERSION: ${FAMOS_VERSION:-dev}
     ports:
       - "3000:80"
     depends_on:

@@ -113,45 +113,59 @@ export function Calendar() {
   })();
 
   const showSpinner = loading && events.length === 0;
+  const activeSources = sources.filter((source) => source.active);
+  const allDayCount = events.filter((event) => event.allDay).length;
 
   return (
-    <div ref={containerRef} className="flex h-full min-h-0 flex-col overflow-hidden p-[var(--page-gutter)]">
+    <div ref={containerRef} className="relative flex h-full min-h-0 flex-col overflow-hidden p-[var(--page-gutter)]">
+      <div className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-primary/10 blur-3xl" />
       {/* Header bar */}
-      <div className={`mb-3 shrink-0 gap-2 ${stackedToolbar ? 'flex flex-col' : 'flex items-center justify-between'}`}>
+      <div className={`relative mb-3 shrink-0 gap-3 ${stackedToolbar ? 'flex flex-col' : 'flex items-end justify-between'}`}>
         {/* Left: nav arrows + heading + today */}
-        <div className="flex min-w-0 items-center gap-2">
-          <button
-            onClick={() => navigate(-1)}
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-text-dim hover:text-text-bright hover:bg-surface-lighter transition-colors"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
-          </button>
-          <button
-            onClick={() => navigate(1)}
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-text-dim hover:text-text-bright hover:bg-surface-lighter transition-colors"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-          </button>
-          <h1 className="ml-1 min-w-0 flex-1 truncate text-lg font-semibold text-text-bright">{heading}</h1>
-          <button
-            onClick={() => setCurrentDate(todayInTimezone(timezone))}
-            className="ml-1 shrink-0 rounded-lg bg-primary-light/10 px-2.5 py-1 text-xs font-semibold text-primary-light transition-colors hover:bg-primary-light/20"
-          >
-            Today
-          </button>
+        <div className="min-w-0">
+          <div className="mb-1 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-text-dim">
+            <span>Family calendar</span>
+            <span className="h-1 w-1 rounded-full bg-primary-light" />
+            <span>{events.length} {events.length === 1 ? 'event' : 'events'}</span>
+          </div>
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex rounded-xl border border-border-subtle bg-surface-light/70 p-0.5 shadow-lg shadow-black/10 backdrop-blur">
+              <button
+                onClick={() => navigate(-1)}
+                aria-label={`Previous ${viewMode}`}
+                className="flex h-8 w-8 items-center justify-center rounded-[9px] text-text-dim transition-colors hover:bg-surface-lighter hover:text-text-bright"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+              </button>
+              <button
+                onClick={() => navigate(1)}
+                aria-label={`Next ${viewMode}`}
+                className="flex h-8 w-8 items-center justify-center rounded-[9px] text-text-dim transition-colors hover:bg-surface-lighter hover:text-text-bright"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+              </button>
+            </div>
+            <h1 className="min-w-0 truncate text-xl font-bold tracking-[-0.03em] text-text-bright sm:text-2xl">{heading}</h1>
+            <button
+              onClick={() => setCurrentDate(todayInTimezone(timezone))}
+              className="ml-1 shrink-0 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary-light transition-colors hover:border-primary/40 hover:bg-primary/20"
+            >
+              Today
+            </button>
+          </div>
         </div>
 
         {/* Right: view toggle + actions */}
         <div className="flex items-center gap-2">
           {/* View mode toggle */}
-          <div className="flex bg-surface-lighter/50 rounded-lg p-0.5">
+          <div className="flex rounded-xl border border-border-subtle bg-surface-light/70 p-1 backdrop-blur">
             {(['day', 'week', 'month'] as const).map((mode) => (
               <button
                 key={mode}
                 onClick={() => setManualView(mode)}
-                className={`px-2 md:px-3 py-1.5 rounded-md text-xs font-semibold capitalize transition-all ${
+                className={`rounded-lg px-2 py-1.5 text-xs font-semibold capitalize transition-all md:px-3 ${
                   viewMode === mode
-                    ? 'bg-surface-light text-text-bright shadow-sm'
+                    ? 'bg-primary text-white shadow-md shadow-primary/20'
                     : 'text-text-dim hover:text-text-bright'
                 }`}
               >
@@ -166,7 +180,7 @@ export function Calendar() {
           <button
             onClick={handleSync}
             disabled={syncing}
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-text-dim hover:text-text-bright hover:bg-surface-lighter transition-colors disabled:opacity-40"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-text-dim transition-colors hover:border-border-subtle hover:bg-surface-light hover:text-text-bright disabled:opacity-40"
             title="Sync calendars"
           >
             <svg className={syncing ? 'animate-spin' : ''} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -178,7 +192,7 @@ export function Calendar() {
           {/* Add event */}
           <button
             onClick={() => { setSelectedEvent(null); setAdding(true); }}
-            className="h-8 flex items-center gap-1.5 bg-primary hover:bg-primary-dark text-white text-xs font-semibold px-3 rounded-lg transition-colors"
+            className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-3 text-xs font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary-dark hover:shadow-primary/30 active:scale-[0.97]"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             <span className="hidden md:inline">Event</span>
@@ -199,6 +213,22 @@ export function Calendar() {
         </div>
       )}
 
+      {!stackedToolbar && (activeSources.length > 0 || events.length > 0) && (
+        <div className="relative mb-3 flex shrink-0 items-center gap-2 overflow-hidden text-xs">
+          <span className="shrink-0 text-text-dim">Showing</span>
+          <div className="scrollbar-hide flex min-w-0 items-center gap-1.5 overflow-x-auto">
+            {activeSources.slice(0, 5).map((source) => (
+              <span key={source.id} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border-subtle bg-surface-light/60 px-2.5 py-1 text-text-dim">
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: source.color || '#7c83ff' }} />
+                {source.name}
+              </span>
+            ))}
+            {activeSources.length > 5 && <span className="shrink-0 text-text-dim">+{activeSources.length - 5}</span>}
+          </div>
+          <span className="ml-auto hidden shrink-0 text-text-dim lg:inline">{allDayCount ? `${allDayCount} all-day · ` : ''}{events.length - allDayCount} scheduled</span>
+        </div>
+      )}
+
       {/* Add event form */}
       {adding && (
         <div className="mb-3 shrink-0">
@@ -216,7 +246,8 @@ export function Calendar() {
       )}
 
       {/* Calendar view */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-card border border-border-subtle bg-panel-raised p-3 sm:p-4">
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[18px] border border-border bg-gradient-to-br from-panel-raised via-panel-raised to-panel p-2 shadow-2xl shadow-black/20 sm:p-3">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary-light/40 to-transparent" />
         {showSpinner ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -228,6 +259,7 @@ export function Calendar() {
                 <DayView
                   date={currentDate}
                   events={events}
+                  showHeader={false}
                   onDateChange={setCurrentDate}
                   onEventSelect={setSelectedEvent}
                 />
@@ -254,6 +286,7 @@ export function Calendar() {
                   setManualView('day');
                 }}
                 onEventSelect={setSelectedEvent}
+                showHeader={false}
               />
             )}
           </>

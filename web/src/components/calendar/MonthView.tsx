@@ -8,6 +8,7 @@ interface MonthViewProps {
   onDateChange?: (date: Date) => void;
   onDaySelect?: (date: Date) => void;
   onEventSelect?: (event: CalendarEvent) => void;
+  showHeader?: boolean;
 }
 
 const MAX_VISIBLE_SINGLE = 2;
@@ -42,7 +43,7 @@ function assignLanes(segments: Omit<EventSegment, 'lane'>[]): EventSegment[] {
   });
 }
 
-export function MonthView({ date, events, onDateChange, onDaySelect, onEventSelect }: MonthViewProps) {
+export function MonthView({ date, events, onDateChange, onDaySelect, onEventSelect, showHeader = true }: MonthViewProps) {
   const timezone = useTimezone();
   const { year, month } = getDateParts(date, timezone);
   const monthIndex = month - 1;
@@ -103,31 +104,31 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="flex items-center justify-between mb-4 shrink-0">
+      {showHeader && <div className="flex items-center justify-between mb-4 shrink-0">
         <button onClick={prevMonth} aria-label="Previous month" className="text-text-dim px-3 py-2 min-h-[48px] min-w-[48px] flex items-center justify-center text-xl">‹</button>
         <p className="text-text-bright font-semibold text-lg truncate px-2">
           {formatDate(date, timezone, { month: 'long', year: 'numeric' })}
         </p>
         <button onClick={nextMonth} aria-label="Next month" className="text-text-dim px-3 py-2 min-h-[48px] min-w-[48px] flex items-center justify-center text-xl">›</button>
-      </div>
+      </div>}
 
       {/* One scroll region for the grid: it scrolls vertically, and horizontally once
           the canvas is narrower than the 700px minimum so day labels stay readable. */}
       <div className="flex-1 min-h-0 overflow-auto">
-        <div className="min-w-[700px]">
-          <div className="grid grid-cols-7 gap-1 mb-1 sticky top-0 z-10 bg-surface-light py-1">
+        <div className="flex h-full min-w-[700px] flex-col">
+          <div className="sticky top-0 z-10 mb-1 grid shrink-0 grid-cols-7 gap-1 rounded-xl border border-border-subtle bg-panel/90 px-1 py-1.5 backdrop-blur">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-              <div key={d} className="text-center text-text-dim text-xs font-medium py-1">{d}</div>
+              <div key={d} className="py-1 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-text-dim">{d}</div>
             ))}
           </div>
 
-          <div className="space-y-1 pb-1">
+          <div className="grid min-h-[420px] flex-1 gap-1 pb-1" style={{ gridTemplateRows: `repeat(${weeks.length}, minmax(76px, 1fr))` }}>
             {weeks.map((week, weekIdx) => {
             const segments = getWeekSegments(week);
             const laneCount = segments.length > 0 ? Math.max(...segments.map((s) => s.lane)) + 1 : 0;
 
             return (
-              <div key={weekIdx}>
+              <div key={weekIdx} className="flex min-h-0 flex-col">
                 {laneCount > 0 && (
                   <div className="grid grid-cols-7 gap-x-1 mb-0.5" style={{ gridTemplateRows: `repeat(${laneCount}, 20px)` }}>
                     {segments.map((seg) => (
@@ -150,9 +151,9 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
                   </div>
                 )}
 
-                <div className="grid grid-cols-7 gap-1">
+                <div className="grid min-h-0 flex-1 grid-cols-7 gap-1">
                   {week.map((day, colIdx) => {
-                    if (!day) return <div key={`e-${weekIdx}-${colIdx}`} className="min-h-[60px] lg:min-h-[80px]" />;
+                    if (!day) return <div key={`e-${weekIdx}-${colIdx}`} className="rounded-xl border border-border-subtle/40 bg-surface/20" />;
 
                     const dayStr = getDateKey(day, timezone);
                     const daySingleEvents = singleDay.filter((ev) => eventSpansDate(ev, dayStr, timezone));
@@ -164,15 +165,15 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
                       <div
                         key={day.toISOString()}
                         onClick={() => onDaySelect?.(day)}
-                        className={`rounded-lg p-1 min-h-[60px] lg:min-h-[80px] cursor-pointer transition-colors flex flex-col ${
+                        className={`group flex min-h-0 flex-col rounded-xl border p-1.5 text-left transition-all ${
                           isToday
-                            ? 'bg-primary/10 ring-1 ring-primary/40'
+                            ? 'border-primary/50 bg-gradient-to-br from-primary/20 to-primary/5 shadow-inner shadow-primary/10'
                             : daySingleEvents.length > 0
-                              ? 'bg-surface-light'
-                              : 'hover:bg-surface-light/50'
+                              ? 'border-border-subtle bg-surface-light/80 hover:border-border'
+                              : 'border-border-subtle/70 bg-surface/35 hover:border-border hover:bg-surface-light/60'
                         }`}
                       >
-                        <span className={`text-xs font-medium px-1 ${isToday ? 'text-primary-light font-bold' : 'text-text-dim'}`}>
+                        <span className={`grid h-6 w-6 place-items-center rounded-full text-xs font-semibold ${isToday ? 'bg-primary text-white shadow-md shadow-primary/30' : 'text-text-dim group-hover:text-text-bright'}`}>
                           {day.getDate()}
                         </span>
                         <div className="flex-1 mt-0.5 space-y-px overflow-hidden">
@@ -180,15 +181,15 @@ export function MonthView({ date, events, onDateChange, onDaySelect, onEventSele
                             <button
                               key={ev.id}
                               onClick={(e) => { e.stopPropagation(); onEventSelect?.(ev); }}
-                              className="w-full flex items-center gap-1 rounded px-1 py-px text-left hover:bg-white/5 transition-colors"
+                              className="flex w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-white/5"
                             >
-                              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: ev.sourceColor || '#6366f1' }} />
+                              <div className="h-1.5 w-1.5 flex-shrink-0 rounded-full shadow-[0_0_8px_currentColor]" style={{ backgroundColor: ev.sourceColor || '#6366f1', color: ev.sourceColor || '#6366f1' }} />
                               <span className="text-[10px] sm:text-xs text-text-bright truncate leading-tight">
                                 {ev.allDay ? ev.title : `${formatTime(ev.startAt, timezone)} ${ev.title}`}
                               </span>
                             </button>
                           ))}
-                          {overflow > 0 && <p className="text-[10px] text-text-dim px-1">+{overflow} more</p>}
+                          {overflow > 0 && <p className="px-1 text-[10px] font-semibold text-primary-light">+{overflow} more</p>}
                         </div>
                       </div>
                     );

@@ -9,6 +9,7 @@ interface ImmichAsset {
   type: string;
   createdAt?: string;
   sourceId: string;
+  sourceName?: string;
 }
 
 const DISPLAY_INTERVAL = 20000;
@@ -156,15 +157,21 @@ export function Screensaver() {
 
   const goPrevious = async () => {
     if (inflightRef.current || photosRef.current.length === 0) return;
+    inflightRef.current = true;
     const prevIndex = currentIndexRef.current > 0 ? currentIndexRef.current - 1 : photosRef.current.length - 1;
     const prev = photosRef.current[prevIndex];
-    if (!prev) return;
+    if (!prev) {
+      inflightRef.current = false;
+      return;
+    }
     try {
       await preloadImage(immichAssetUrl(prev.id, prev.sourceId, 'preview'));
     } catch {
+      inflightRef.current = false;
       return;
     }
     showPhoto(prev, prevIndex);
+    inflightRef.current = false;
     scheduleNext();
   };
 
@@ -229,38 +236,73 @@ export function Screensaver() {
 
       {chromeVisible && (
         <>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); void goPrevious(); }}
-            className="absolute left-3 md:left-6 top-1/2 -translate-y-1/2 rounded-full bg-black/40 px-3 py-2 md:px-4 md:py-3 text-2xl md:text-3xl text-white/75 transition hover:bg-black/55 hover:text-white"
+          {/* The full-height edge zones deliberately absorb near-misses and
+              swipe movement so navigating photos can never wake the app. */}
+          <div
+            className="absolute inset-y-0 left-0 flex w-[clamp(7rem,16vw,12rem)] items-center justify-start pl-[max(1rem,env(safe-area-inset-left))]"
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
           >
-            ‹
-          </button>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); void goNext(); }}
-            className="absolute right-3 md:right-6 top-1/2 -translate-y-1/2 rounded-full bg-black/40 px-3 py-2 md:px-4 md:py-3 text-2xl md:text-3xl text-white/75 transition hover:bg-black/55 hover:text-white"
+            <button
+              type="button"
+              onClick={() => { void goPrevious(); }}
+              className="grid h-20 w-20 place-items-center rounded-full border border-white/15 bg-black/55 text-5xl font-light leading-none text-white/90 shadow-2xl backdrop-blur-md transition hover:scale-105 hover:bg-black/70 hover:text-white active:scale-95 md:h-24 md:w-24 md:text-6xl"
+              aria-label="Previous photo"
+            >
+              <span aria-hidden="true" className="-translate-y-0.5">‹</span>
+            </button>
+          </div>
+          <div
+            className="absolute inset-y-0 right-0 flex w-[clamp(7rem,16vw,12rem)] items-center justify-end pr-[max(1rem,env(safe-area-inset-right))]"
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
           >
-            ›
-          </button>
+            <button
+              type="button"
+              onClick={() => { void goNext(); }}
+              className="grid h-20 w-20 place-items-center rounded-full border border-white/15 bg-black/55 text-5xl font-light leading-none text-white/90 shadow-2xl backdrop-blur-md transition hover:scale-105 hover:bg-black/70 hover:text-white active:scale-95 md:h-24 md:w-24 md:text-6xl"
+              aria-label="Next photo"
+            >
+              <span aria-hidden="true" className="-translate-y-0.5">›</span>
+            </button>
+          </div>
 
-          <div className="absolute bottom-4 right-4 md:bottom-8 md:right-8 flex items-center gap-3">
-            {showInfo && currentPhoto?.createdAt && (
-              <div className="bg-black/50 rounded-xl px-4 py-2 text-white/80 text-sm">
-                {new Date(currentPhoto.createdAt).toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                <span className="text-white/50 ml-2">
-                  {new Date(currentPhoto.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                </span>
+          {/* Large padded corner zone protects the info control from waking
+              the app when a finger lands just outside the button. */}
+          <div
+            className="absolute bottom-0 right-0 flex min-h-40 min-w-[min(28rem,85vw)] items-end justify-end gap-3 p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pr-[max(1.5rem,env(safe-area-inset-right))]"
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            {showInfo && currentPhoto && (
+              <div className="min-w-0 rounded-2xl border border-white/10 bg-black/65 px-5 py-3 text-right text-sm text-white/80 shadow-2xl backdrop-blur-md">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/45">Playlist</p>
+                <p className="truncate text-base font-semibold text-white">{currentPhoto.sourceName || 'Immich Album'}</p>
+                {currentPhoto.createdAt && (
+                  <p className="mt-1 text-white/65">
+                    {new Date(currentPhoto.createdAt).toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                    <span className="ml-2 text-white/45">
+                      {new Date(currentPhoto.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                    </span>
+                  </p>
+                )}
               </div>
             )}
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); setShowInfo((v) => !v); }}
-              className={`w-10 h-10 flex items-center justify-center rounded-full transition ${
-                showInfo ? 'bg-white/20 text-white' : 'bg-black/40 text-white/60 hover:bg-black/55 hover:text-white/80'
+              onClick={() => setShowInfo((v) => !v)}
+              className={`grid h-16 w-16 shrink-0 place-items-center rounded-full border shadow-2xl backdrop-blur-md transition hover:scale-105 active:scale-95 ${
+                showInfo ? 'border-white/30 bg-white/25 text-white' : 'border-white/15 bg-black/55 text-white/75 hover:bg-black/70 hover:text-white'
               }`}
+              aria-label={showInfo ? 'Hide photo information' : 'Show photo information'}
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" />
                 <line x1="12" y1="16" x2="12" y2="12" />
                 <line x1="12" y1="8" x2="12.01" y2="8" />

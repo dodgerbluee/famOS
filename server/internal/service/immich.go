@@ -43,9 +43,10 @@ type ImmichSource struct {
 }
 
 type ImmichAsset struct {
-	ID       string `json:"id"`
-	CreatedAt string `json:"createdAt"`
-	SourceID string `json:"sourceId"`
+	ID         string `json:"id"`
+	CreatedAt  string `json:"createdAt"`
+	SourceID   string `json:"sourceId"`
+	SourceName string `json:"sourceName"`
 }
 
 func cleanSetting(s string) string {
@@ -222,7 +223,7 @@ func (s *ImmichService) GetAlbumPhotos(ctx context.Context) ([]ImmichAsset, erro
 				continue
 			}
 			seen[key] = struct{}{}
-			photos = append(photos, ImmichAsset{ID: item.ID, CreatedAt: item.CreatedAt, SourceID: src.ID})
+			photos = append(photos, ImmichAsset{ID: item.ID, CreatedAt: item.CreatedAt, SourceID: src.ID, SourceName: src.Name})
 		}
 	}
 

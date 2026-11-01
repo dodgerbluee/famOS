@@ -157,11 +157,15 @@ export function WeekView({ startDate, events, onDateChange, onEventSelect, refer
             const dayEvents = compactEventsByDay(day);
             const isToday = getDateKey(day, timezone) === today;
             return (
-              <div ref={(el) => { dayRefs.current[index] = el; }} key={day.toISOString()} className={`rounded-lg p-2 ${isToday ? 'bg-primary/10 ring-1 ring-primary/30' : 'bg-surface-light'}`}>
-                <p className={`text-xs font-medium mb-1 ${isToday ? 'text-primary-light' : 'text-text-dim'}`}>
-                  {formatDate(day, timezone, { weekday: 'short', month: 'short', day: 'numeric' })}
-                  {isToday && ' · Today'}
-                </p>
+              <div ref={(el) => { dayRefs.current[index] = el; }} key={day.toISOString()} className={`rounded-xl border p-2.5 ${isToday ? 'border-primary/40 bg-gradient-to-br from-primary/15 to-primary/5' : 'border-border-subtle bg-surface-light/70'}`}>
+                <div className="mb-2 flex items-center justify-between">
+                  <p className={`text-xs font-semibold ${isToday ? 'text-primary-light' : 'text-text-bright'}`}>
+                    {formatDate(day, timezone, { weekday: 'long', month: 'short', day: 'numeric' })}
+                  </p>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${isToday ? 'bg-primary text-white' : 'bg-surface-lighter text-text-dim'}`}>
+                    {isToday ? 'Today' : `${dayEvents.length} ${dayEvents.length === 1 ? 'event' : 'events'}`}
+                  </span>
+                </div>
                 <div className="space-y-1">
                   {dayEvents.map((ev) => (
                     <EventCard key={ev.id} event={ev} compact onSelect={onEventSelect} referenceTime={referenceTime} />
@@ -195,17 +199,15 @@ export function WeekView({ startDate, events, onDateChange, onEventSelect, refer
       )}
 
       {/* Day column headers */}
-      <div className="grid grid-cols-7 gap-px shrink-0 mb-1">
+      <div className="mb-1 grid shrink-0 grid-cols-7 gap-1 rounded-xl border border-border-subtle bg-panel/70 px-1 py-1">
         {days.map((day, i) => {
           const isToday = dayKeys[i] === today;
           return (
-            <div key={i} className="text-center py-1.5">
+            <div key={i} className={`rounded-lg py-1.5 text-center transition-colors ${isToday ? 'bg-primary/10' : ''}`}>
               <p className={`text-[10px] uppercase tracking-wider font-semibold ${isToday ? 'text-primary-light' : 'text-text-dim'}`}>
                 {formatDate(day, timezone, { weekday: 'short' })}
               </p>
-              <p className={`text-lg font-bold leading-tight ${isToday ? 'text-primary-light' : 'text-text-bright'}`}>
-                {formatDate(day, timezone, { day: 'numeric' })}
-              </p>
+              <span className={`mx-auto mt-0.5 grid h-7 w-7 place-items-center rounded-full text-base font-bold leading-none ${isToday ? 'bg-primary text-white shadow-md shadow-primary/30' : 'text-text-bright'}`}>{formatDate(day, timezone, { day: 'numeric' })}</span>
             </div>
           );
         })}
@@ -236,18 +238,19 @@ export function WeekView({ startDate, events, onDateChange, onEventSelect, refer
 
       {/* Single-day event columns */}
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
-        <div className="grid grid-cols-7 gap-1 h-full">
+        <div className="grid h-full grid-cols-7 gap-1">
           {days.map((_day, i) => {
             const dayEvents = singleEventsByDay(dayKeys[i]);
             const isToday = dayKeys[i] === today;
             return (
               <div
                 key={i}
-                className={`rounded-lg p-1.5 flex flex-col gap-1 ${isToday ? 'bg-primary/5 ring-1 ring-primary/20' : 'bg-surface/50'}`}
+                className={`flex flex-col gap-1 rounded-xl border p-1.5 ${isToday ? 'border-primary/30 bg-gradient-to-b from-primary/10 to-primary/[0.03]' : 'border-border-subtle/60 bg-surface/35'}`}
               >
                 {dayEvents.map((ev) => (
                   <WeekEventItem key={ev.id} event={ev} onSelect={onEventSelect} referenceTime={referenceTime} timezone={timezone} />
                 ))}
+                {dayEvents.length === 0 && <span className="m-auto text-[10px] font-medium text-text-dim/50">Open</span>}
               </div>
             );
           })}
@@ -269,10 +272,10 @@ function WeekEventItem({ event, onSelect, referenceTime, timezone }: {
   return (
     <button
       onClick={() => onSelect?.(event)}
-      className={`w-full text-left rounded-md px-1.5 py-1 transition-transform ${onSelect ? 'active:scale-[0.97]' : ''} ${
+      className={`w-full rounded-lg border border-white/[0.04] px-1.5 py-1.5 text-left shadow-sm transition-all hover:border-white/10 hover:brightness-110 ${onSelect ? 'active:scale-[0.97]' : ''} ${
         visualState === 'muted' ? 'opacity-40' : ''
       } ${visualState === 'highlight' ? 'ring-1 ring-accent-yellow/50' : ''}`}
-      style={{ backgroundColor: (event.sourceColor || '#6366f1') + '18' }}
+      style={{ background: `linear-gradient(135deg, ${(event.sourceColor || '#6366f1')}22, ${(event.sourceColor || '#6366f1')}0d)` }}
     >
       <div className="flex items-start gap-1">
         <div className="w-0.5 h-3 rounded-full mt-0.5 shrink-0" style={{ backgroundColor: event.sourceColor || '#6366f1' }} />
