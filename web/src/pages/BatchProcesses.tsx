@@ -61,7 +61,7 @@ export function BatchProcesses() {
   const nextRun = getNextScheduledRun(timezone);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 p-[var(--page-gutter)]">
       <header className="flex items-center justify-between pt-2">
         <div>
           <h1 className="text-3xl font-bold text-text-bright">Batch Processes</h1>

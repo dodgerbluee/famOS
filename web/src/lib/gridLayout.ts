@@ -17,8 +17,31 @@ const GRID_GRANULARITY = 4;
 
 export const GRID_COLS = 6 * GRID_GRANULARITY;
 export const DEFAULT_TOTAL_ROWS = 5 * GRID_GRANULARITY;
-export const GRID_GAP = 16;
 export const SCROLL_ROW_HEIGHT = 45;
+
+/**
+ * The dashboard gap is defined once in CSS (`--dashboard-gap`, see index.css)
+ * and read back as a number for drag math, so the rendered gap and the drag
+ * step can never disagree. This fallback is only used before the property can
+ * be read (no DOM).
+ */
+export const GRID_GAP_VAR = '--dashboard-gap';
+export const GRID_GAP_FALLBACK = 16;
+
+/**
+ * A `fill` dashboard needs this much vertical space to stay readable. When the
+ * available height is smaller, the same layout renders with scroll row sizing
+ * for that session only — the saved preference is never changed.
+ */
+export const MIN_FILL_HEIGHT = 720;
+
+/** Read the shared gap custom property, in pixels, from an element's cascade. */
+export function readGridGap(el?: Element | null): number {
+  const target = el ?? (typeof document !== 'undefined' ? document.documentElement : null);
+  if (!target || typeof getComputedStyle !== 'function') return GRID_GAP_FALLBACK;
+  const value = Number.parseFloat(getComputedStyle(target).getPropertyValue(GRID_GAP_VAR));
+  return Number.isFinite(value) && value >= 0 ? value : GRID_GAP_FALLBACK;
+}
 
 export const CARD_MIN_SIZES: Record<string, { minCol: number; minRow: number }> = {
   briefing: { minCol: 1, minRow: 1 },
@@ -199,13 +222,25 @@ export function computeCellDimensions(
   containerHeight: number,
   mode: 'fill' | 'scroll',
   totalRows: number,
+  gap: number,
 ) {
-  const cellWidth = (containerWidth - (GRID_COLS - 1) * GRID_GAP) / GRID_COLS;
+  const cellWidth = (containerWidth - (GRID_COLS - 1) * gap) / GRID_COLS;
   const cellHeight =
     mode === 'fill'
-      ? (containerHeight - (totalRows - 1) * GRID_GAP) / totalRows
+      ? (containerHeight - (totalRows - 1) * gap) / totalRows
       : SCROLL_ROW_HEIGHT;
   return { cellWidth, cellHeight };
+}
+
+/**
+ * Effective mode used for both rendering and drag math. A saved `fill`
+ * preference falls back to scroll row sizing when the dashboard area is too
+ * short; that fallback is never written back to the saved layout.
+ */
+export function resolveRenderMode(mode: 'fill' | 'scroll', availableHeight: number): 'fill' | 'scroll' {
+  if (mode !== 'fill') return 'scroll';
+  if (availableHeight > 0 && availableHeight < MIN_FILL_HEIGHT) return 'scroll';
+  return 'fill';
 }
 
 export function pointerToGrid(
@@ -214,10 +249,11 @@ export function pointerToGrid(
   containerRect: DOMRect,
   cellWidth: number,
   cellHeight: number,
+  gap: number,
 ): { col: number; row: number } {
   const relX = x - containerRect.left;
   const relY = y - containerRect.top;
-  const col = Math.max(1, Math.min(GRID_COLS, Math.round(relX / (cellWidth + GRID_GAP)) + 1));
-  const row = Math.max(1, Math.round(relY / (cellHeight + GRID_GAP)) + 1);
+  const col = Math.max(1, Math.min(GRID_COLS, Math.round(relX / (cellWidth + gap)) + 1));
+  const row = Math.max(1, Math.round(relY / (cellHeight + gap)) + 1);
   return { col, row };
 }

@@ -44,8 +44,8 @@ export function Chores() {
   const visibleCount = sharedTemplates.length + templatesByKid.reduce((n, g) => n + g.templates.length, 0);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+    <div className="space-y-6 p-[var(--page-gutter)]">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-bold text-text-bright">Chores</h1>
           <p className="text-text-dim text-sm mt-0.5">Kid chores. Add them here, or in a kid's Vikunja list. Adult to-dos live on Tasks.</p>
@@ -71,7 +71,7 @@ export function Chores() {
       {sharedTemplates.length > 0 && (
         <section>
           <h2 className="text-sm font-semibold text-text-dim uppercase tracking-wide mb-3">Everyone</h2>
-          <div className="space-y-2">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))] gap-2">
             {sharedTemplates.map((tmpl) => (
               <ChoreRow
                 key={tmpl.id}
@@ -95,7 +95,7 @@ export function Chores() {
           <h2 className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: kid.color }}>
             {kid.name}
           </h2>
-          <div className="space-y-2">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))] gap-2">
             {kidTemplates.map((tmpl) => (
               <ChoreRow
                 key={tmpl.id}

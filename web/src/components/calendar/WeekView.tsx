@@ -1,7 +1,7 @@
 import { EventCard } from './EventCard';
 import type { CalendarEvent } from '../../api/client';
 import { eventSpansDate, getCalendarEventDateKey, getEventVisualState, isMultiDayEvent } from '../../lib/calendar';
-import { memo, useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { addDaysInTimezone, formatDate, formatTime, getDateKey, useTimezone } from '../../lib/timezone';
 
 interface WeekViewProps {
@@ -13,6 +13,8 @@ interface WeekViewProps {
   showHeader?: boolean;
   autoScrollRelevant?: boolean;
   compact?: boolean;
+  /** Let the view fill its parent and own one scroll region instead of a fixed max height. */
+  fill?: boolean;
 }
 
 interface EventSegment {
@@ -45,25 +47,24 @@ function assignLanes(segments: Omit<EventSegment, 'lane'>[]): EventSegment[] {
   });
 }
 
-export const WeekView = memo(function WeekView({ startDate, events, onDateChange, onEventSelect, referenceTime, showHeader = true, autoScrollRelevant = false, compact = false }: WeekViewProps) {
+export function WeekView({ startDate, events, onDateChange, onEventSelect, referenceTime, showHeader = true, autoScrollRelevant = false, compact = false, fill = false }: WeekViewProps) {
   const timezone = useTimezone();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const dayRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const startMs = startDate.getTime();
-  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(startMs);
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(startDate);
     d.setDate(d.getDate() + i);
     d.setHours(12, 0, 0, 0);
     return d;
-  }), [startMs]);
+  });
 
-  const today = getDateKey(referenceTime ?? new Date(), timezone);
-  const dayKeys = useMemo(() => days.map((d) => getDateKey(d, timezone)), [days, timezone]);
+  const today = getDateKey(new Date(), timezone);
+  const dayKeys = days.map((d) => getDateKey(d, timezone));
 
-  const multiDayEvents = useMemo(() => events.filter((ev) => isMultiDayEvent(ev, timezone)), [events, timezone]);
-  const singleDayEvents = useMemo(() => events.filter((ev) => !isMultiDayEvent(ev, timezone)), [events, timezone]);
+  const multiDayEvents = events.filter((ev) => isMultiDayEvent(ev, timezone));
+  const singleDayEvents = events.filter((ev) => !isMultiDayEvent(ev, timezone));
 
-  const segments = useMemo(() => {
+  const segments = (() => {
     const raw: Omit<EventSegment, 'lane'>[] = [];
     for (const ev of multiDayEvents) {
       let startCol = -1;
@@ -89,7 +90,7 @@ export const WeekView = memo(function WeekView({ startDate, events, onDateChange
     }
     raw.sort((a, b) => a.startCol - b.startCol || b.span - a.span);
     return assignLanes(raw);
-  }, [multiDayEvents, dayKeys, timezone]);
+  })();
 
   const laneCount = segments.length > 0 ? Math.max(...segments.map((s) => s.lane)) + 1 : 0;
 
@@ -115,8 +116,10 @@ export const WeekView = memo(function WeekView({ startDate, events, onDateChange
   useEffect(() => {
     if (!autoScrollRelevant || !scrollRef.current) return;
     if (compact && referenceTime) {
-      const todayKey = getDateKey(referenceTime, timezone);
-      const targetIndex = compactVisibleDays.findIndex((day) => getDateKey(day, timezone) >= todayKey);
+      const targetIndex = compactVisibleDays.findIndex((day) => {
+        const dayEvents = compactEventsByDay(day);
+        return dayEvents.some((event) => getEventVisualState(event, referenceTime) !== 'muted');
+      });
       const index = targetIndex >= 0 ? targetIndex : 0;
       const target = dayRefs.current[index];
       if (target && scrollRef.current) {
@@ -134,7 +137,7 @@ export const WeekView = memo(function WeekView({ startDate, events, onDateChange
 
   if (compact) {
     return (
-      <div className="flex flex-col h-full">
+      <div className={fill ? 'flex flex-col h-full min-h-0' : ''}>
         {showHeader && (
           <div className="flex items-center justify-between mb-4">
             <button onClick={prevWeek} className="text-text-dim px-3 py-2 min-h-[48px] min-w-[48px] flex items-center justify-center text-xl">‹</button>
@@ -146,7 +149,10 @@ export const WeekView = memo(function WeekView({ startDate, events, onDateChange
             <button onClick={nextWeek} className="text-text-dim px-3 py-2 min-h-[48px] min-w-[48px] flex items-center justify-center text-xl">›</button>
           </div>
         )}
-        <div ref={scrollRef} className="space-y-2 overflow-y-auto flex-1 min-h-0 pr-1">
+        <div
+          ref={scrollRef}
+          className={`space-y-2 overflow-y-auto pr-1 ${fill ? 'flex-1 min-h-0' : 'max-h-[22rem]'}`}
+        >
           {compactVisibleDays.map((day, index) => {
             const dayEvents = compactEventsByDay(day);
             const isToday = getDateKey(day, timezone) === today;
@@ -249,7 +255,7 @@ export const WeekView = memo(function WeekView({ startDate, events, onDateChange
       </div>
     </div>
   );
-});
+}
 
 function WeekEventItem({ event, onSelect, referenceTime, timezone }: {
   event: CalendarEvent;

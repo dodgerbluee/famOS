@@ -65,8 +65,8 @@ export function Tasks() {
   const completed = tasks.filter((t) => t.done);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+    <div className="space-y-6 p-[var(--page-gutter)]">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-bold text-text-bright">Tasks</h1>
           <p className="text-text-dim text-sm mt-0.5">Each adult has their own list. Kids' to-dos live on Chores.</p>
@@ -134,27 +134,25 @@ export function Tasks() {
         </div>
       )}
 
-      {pending.length > 0 && (
-        <section>
-          <h2 className="text-sm font-semibold text-text-dim uppercase tracking-wide mb-3">To Do</h2>
-          <div className="space-y-2">
-            {pending.map((task) => (
-              <TaskRow key={task.id} task={task} onToggle={handleToggle} />
-            ))}
-          </div>
-        </section>
-      )}
+      <div className="grid items-start gap-6 min-[1100px]:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.6fr)]">
+        {pending.length > 0 && (
+          <section>
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-text-dim">To Do</h2>
+            <div className="space-y-2">
+              {pending.map((task) => <TaskRow key={task.id} task={task} onToggle={handleToggle} />)}
+            </div>
+          </section>
+        )}
 
-      {completed.length > 0 && (
-        <section>
-          <h2 className="text-sm font-semibold text-text-dim uppercase tracking-wide mb-3">Done</h2>
-          <div className="space-y-2">
-            {completed.map((task) => (
-              <TaskRow key={task.id} task={task} onToggle={handleToggle} />
-            ))}
-          </div>
-        </section>
-      )}
+        {completed.length > 0 && (
+          <section>
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-text-dim">Done</h2>
+            <div className="space-y-2">
+              {completed.map((task) => <TaskRow key={task.id} task={task} onToggle={handleToggle} />)}
+            </div>
+          </section>
+        )}
+      </div>
 
       {tasks.length === 0 && !showForm && (
         <p className="text-text-dim text-center py-8">No tasks yet. Tap "+ Add Task" to get started.</p>

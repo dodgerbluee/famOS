@@ -38,7 +38,7 @@ export function SandersCash() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-[var(--page-gutter)]">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <h1 className="text-2xl font-bold text-text-bright">{currencyName}</h1>
         <div className="flex items-center gap-2">
@@ -57,7 +57,7 @@ export function SandersCash() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-[var(--card-gap)]">
         {accounts.map((account) => {
           const member = members.find((m) => m.id === account.memberId);
           const age = member ? getAge(member.birthday) : null;

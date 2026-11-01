@@ -118,11 +118,8 @@ export function CameraGrid({ onSelect }: CameraGridProps) {
     );
   }
 
-  const cols = sortedCameras.length <= 2 ? 'grid-cols-1 sm:grid-cols-2' :
-               sortedCameras.length <= 4 ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-3 xl:grid-cols-4';
-
   return (
-    <div className={`grid ${cols} gap-3`}>
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-[var(--card-gap)] min-[1600px]:grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))]">
       {sortedCameras.map((cam, index) => (
         <CameraTile
           key={cam.name}
@@ -293,11 +290,11 @@ function CameraTile({ camera, index, onSelect, onDragStart, onDragEnter, onDragE
       onDragEnter={disableDrag ? undefined : () => onDragEnter(index)}
       onDragEnd={disableDrag ? undefined : onDragEnd}
       onDragOver={disableDrag ? undefined : (e) => e.preventDefault()}
-      className="relative rounded-2xl bg-surface-light cursor-pointer active:scale-[0.98] transition-transform"
+      className="relative cursor-pointer rounded-card border border-border-subtle bg-panel-raised transition-transform active:scale-[0.98]"
       style={{ overflow: 'clip' }}
       onClick={() => onSelect?.(camera)}
     >
-      <div className="relative w-full bg-black" style={{ paddingBottom: '50%' }}>
+      <div className="relative aspect-video w-full bg-black">
         {!liveReady && (
           <img
             src={`${camera.snapshotUrl}?t=${camera.name}`}

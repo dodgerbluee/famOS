@@ -276,7 +276,7 @@ export function SandersCashKid() {
   }
 
   return (
-    <div className="space-y-0">
+    <div className="space-y-0 p-[var(--page-gutter)]">
       <div className="bg-surface border border-surface-lighter rounded-2xl shadow-sm overflow-hidden">
         {/* Overview Section */}
         <div className="p-5 md:p-6">

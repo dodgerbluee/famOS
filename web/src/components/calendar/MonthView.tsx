@@ -1,4 +1,3 @@
-import { memo } from 'react';
 import type { CalendarEvent } from '../../api/client';
 import { eventSpansDate, getCalendarEventDateKey, isMultiDayEvent } from '../../lib/calendar';
 import { addMonthsInTimezone, formatDate, formatTime, fromDateKey, getDateKey, getDateParts, useTimezone } from '../../lib/timezone';
@@ -10,6 +9,8 @@ interface MonthViewProps {
   onDaySelect?: (date: Date) => void;
   onEventSelect?: (event: CalendarEvent) => void;
 }
+
+const MAX_VISIBLE_SINGLE = 2;
 
 interface EventSegment {
   event: CalendarEvent;
@@ -41,7 +42,7 @@ function assignLanes(segments: Omit<EventSegment, 'lane'>[]): EventSegment[] {
   });
 }
 
-export const MonthView = memo(function MonthView({ date, events, onDateChange, onDaySelect, onEventSelect }: MonthViewProps) {
+export function MonthView({ date, events, onDateChange, onDaySelect, onEventSelect }: MonthViewProps) {
   const timezone = useTimezone();
   const { year, month } = getDateParts(date, timezone);
   const monthIndex = month - 1;
@@ -97,118 +98,108 @@ export const MonthView = memo(function MonthView({ date, events, onDateChange, o
     return assignLanes(raw);
   }
 
-  function getMaxEventsForDay(week: (Date | null)[]): number {
-    let max = 0;
-    for (const day of week) {
-      if (!day) continue;
-      const dayStr = getDateKey(day, timezone);
-      const count = singleDay.filter((ev) => eventSpansDate(ev, dayStr, timezone)).length;
-      if (count > max) max = count;
-    }
-    return max;
-  }
-
   const prevMonth = () => onDateChange?.(addMonthsInTimezone(date, -1, timezone));
   const nextMonth = () => onDateChange?.(addMonthsInTimezone(date, 1, timezone));
 
-  const rowTemplate = weeks.map((week) => {
-    const segments = getWeekSegments(week);
-    const laneCount = segments.length > 0 ? Math.max(...segments.map((s) => s.lane)) + 1 : 0;
-    const maxEvents = getMaxEventsForDay(week);
-    const contentLines = laneCount + maxEvents;
-    return contentLines > 0 ? `minmax(${20 + contentLines * 18}px, 1fr)` : 'minmax(40px, 1fr)';
-  }).join(' ');
-
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       <div className="flex items-center justify-between mb-4 shrink-0">
-        <button onClick={prevMonth} className="text-text-dim px-3 py-2 min-h-[48px] min-w-[48px] flex items-center justify-center text-xl">‹</button>
-        <p className="text-text-bright font-semibold text-lg">
+        <button onClick={prevMonth} aria-label="Previous month" className="text-text-dim px-3 py-2 min-h-[48px] min-w-[48px] flex items-center justify-center text-xl">‹</button>
+        <p className="text-text-bright font-semibold text-lg truncate px-2">
           {formatDate(date, timezone, { month: 'long', year: 'numeric' })}
         </p>
-        <button onClick={nextMonth} className="text-text-dim px-3 py-2 min-h-[48px] min-w-[48px] flex items-center justify-center text-xl">›</button>
+        <button onClick={nextMonth} aria-label="Next month" className="text-text-dim px-3 py-2 min-h-[48px] min-w-[48px] flex items-center justify-center text-xl">›</button>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 mb-1 shrink-0">
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-          <div key={d} className="text-center text-text-dim text-xs font-medium py-1">{d}</div>
-        ))}
-      </div>
+      {/* One scroll region for the grid: it scrolls vertically, and horizontally once
+          the canvas is narrower than the 700px minimum so day labels stay readable. */}
+      <div className="flex-1 min-h-0 overflow-auto">
+        <div className="min-w-[700px]">
+          <div className="grid grid-cols-7 gap-1 mb-1 sticky top-0 z-10 bg-surface-light py-1">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+              <div key={d} className="text-center text-text-dim text-xs font-medium py-1">{d}</div>
+            ))}
+          </div>
 
-      <div className="flex-1 min-h-0 grid gap-1" style={{ gridTemplateRows: rowTemplate }}>
-        {weeks.map((week, weekIdx) => {
-          const segments = getWeekSegments(week);
-          const laneCount = segments.length > 0 ? Math.max(...segments.map((s) => s.lane)) + 1 : 0;
+          <div className="space-y-1 pb-1">
+            {weeks.map((week, weekIdx) => {
+            const segments = getWeekSegments(week);
+            const laneCount = segments.length > 0 ? Math.max(...segments.map((s) => s.lane)) + 1 : 0;
 
-          return (
-            <div key={weekIdx} className="flex flex-col min-h-0">
-              {laneCount > 0 && (
-                <div className="grid grid-cols-7 gap-x-1 mb-0.5" style={{ gridTemplateRows: `repeat(${laneCount}, 20px)` }}>
-                  {segments.map((seg) => (
-                    <button
-                      key={`${seg.event.id}-${weekIdx}`}
-                      onClick={(e) => { e.stopPropagation(); onEventSelect?.(seg.event); }}
-                      className="truncate text-[10px] sm:text-xs px-1.5 leading-[20px] text-left hover:brightness-125 transition-all"
-                      style={{
-                        gridColumn: `${seg.startCol + 1} / span ${seg.span}`,
-                        gridRow: seg.lane + 1,
-                        backgroundColor: `${seg.event.sourceColor || '#6366f1'}25`,
-                        borderLeft: seg.isStart ? `2px solid ${seg.event.sourceColor || '#6366f1'}` : undefined,
-                        borderRadius: `${seg.isStart ? '4px' : '0'} ${seg.isEnd ? '4px' : '0'} ${seg.isEnd ? '4px' : '0'} ${seg.isStart ? '4px' : '0'}`,
-                        color: seg.event.sourceColor || '#6366f1',
-                      }}
-                    >
-                      {seg.isStart ? seg.event.title : `↳ ${seg.event.title}`}
-                    </button>
-                  ))}
-                </div>
-              )}
+            return (
+              <div key={weekIdx}>
+                {laneCount > 0 && (
+                  <div className="grid grid-cols-7 gap-x-1 mb-0.5" style={{ gridTemplateRows: `repeat(${laneCount}, 20px)` }}>
+                    {segments.map((seg) => (
+                      <button
+                        key={`${seg.event.id}-${weekIdx}`}
+                        onClick={(e) => { e.stopPropagation(); onEventSelect?.(seg.event); }}
+                        className="truncate text-[10px] sm:text-xs px-1.5 leading-[20px] text-left hover:brightness-125 transition-all"
+                        style={{
+                          gridColumn: `${seg.startCol + 1} / span ${seg.span}`,
+                          gridRow: seg.lane + 1,
+                          backgroundColor: `${seg.event.sourceColor || '#6366f1'}25`,
+                          borderLeft: seg.isStart ? `2px solid ${seg.event.sourceColor || '#6366f1'}` : undefined,
+                          borderRadius: `${seg.isStart ? '4px' : '0'} ${seg.isEnd ? '4px' : '0'} ${seg.isEnd ? '4px' : '0'} ${seg.isStart ? '4px' : '0'}`,
+                          color: seg.event.sourceColor || '#6366f1',
+                        }}
+                      >
+                        {seg.isStart ? seg.event.title : `↳ ${seg.event.title}`}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
-              <div className="grid grid-cols-7 gap-1 flex-1">
-                {week.map((day, colIdx) => {
-                  if (!day) return <div key={`e-${weekIdx}-${colIdx}`} />;
+                <div className="grid grid-cols-7 gap-1">
+                  {week.map((day, colIdx) => {
+                    if (!day) return <div key={`e-${weekIdx}-${colIdx}`} className="min-h-[60px] lg:min-h-[80px]" />;
 
-                  const dayStr = getDateKey(day, timezone);
-                  const daySingleEvents = singleDay.filter((ev) => eventSpansDate(ev, dayStr, timezone));
-                  const isToday = dayStr === today;
+                    const dayStr = getDateKey(day, timezone);
+                    const daySingleEvents = singleDay.filter((ev) => eventSpansDate(ev, dayStr, timezone));
+                    const isToday = dayStr === today;
+                    const visible = daySingleEvents.slice(0, MAX_VISIBLE_SINGLE);
+                    const overflow = daySingleEvents.length - MAX_VISIBLE_SINGLE;
 
-                  return (
-                    <div
-                      key={day.toISOString()}
-                      onClick={() => onDaySelect?.(day)}
-                      className={`rounded-lg p-1 cursor-pointer transition-colors flex flex-col ${
-                        isToday
-                          ? 'bg-primary/10 ring-1 ring-primary/40'
-                          : daySingleEvents.length > 0
-                            ? 'bg-surface-light'
-                            : 'hover:bg-surface-light/50'
-                      }`}
-                    >
-                      <span className={`text-xs font-medium px-1 ${isToday ? 'text-primary-light font-bold' : 'text-text-dim'}`}>
-                        {day.getDate()}
-                      </span>
-                      <div className="flex-1 mt-0.5 space-y-px">
-                        {daySingleEvents.map((ev) => (
-                          <button
-                            key={ev.id}
-                            onClick={(e) => { e.stopPropagation(); onEventSelect?.(ev); }}
-                            className="w-full flex items-center gap-1 rounded px-1 py-px text-left hover:bg-white/5 transition-colors"
-                          >
-                            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: ev.sourceColor || '#6366f1' }} />
-                            <span className="text-[10px] sm:text-xs text-text-bright truncate leading-tight">
-                              {ev.allDay ? ev.title : `${formatTime(ev.startAt, timezone)} ${ev.title}`}
-                            </span>
-                          </button>
-                        ))}
+                    return (
+                      <div
+                        key={day.toISOString()}
+                        onClick={() => onDaySelect?.(day)}
+                        className={`rounded-lg p-1 min-h-[60px] lg:min-h-[80px] cursor-pointer transition-colors flex flex-col ${
+                          isToday
+                            ? 'bg-primary/10 ring-1 ring-primary/40'
+                            : daySingleEvents.length > 0
+                              ? 'bg-surface-light'
+                              : 'hover:bg-surface-light/50'
+                        }`}
+                      >
+                        <span className={`text-xs font-medium px-1 ${isToday ? 'text-primary-light font-bold' : 'text-text-dim'}`}>
+                          {day.getDate()}
+                        </span>
+                        <div className="flex-1 mt-0.5 space-y-px overflow-hidden">
+                          {visible.map((ev) => (
+                            <button
+                              key={ev.id}
+                              onClick={(e) => { e.stopPropagation(); onEventSelect?.(ev); }}
+                              className="w-full flex items-center gap-1 rounded px-1 py-px text-left hover:bg-white/5 transition-colors"
+                            >
+                              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: ev.sourceColor || '#6366f1' }} />
+                              <span className="text-[10px] sm:text-xs text-text-bright truncate leading-tight">
+                                {ev.allDay ? ev.title : `${formatTime(ev.startAt, timezone)} ${ev.title}`}
+                              </span>
+                            </button>
+                          ))}
+                          {overflow > 0 && <p className="text-[10px] text-text-dim px-1">+{overflow} more</p>}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+          </div>
+        </div>
       </div>
     </div>
   );
-});
+}

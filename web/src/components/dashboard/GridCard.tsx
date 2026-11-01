@@ -1,5 +1,9 @@
 import { useRef, useEffect, useCallback, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
-import { type GridCardConfig, GRID_COLS, CARD_MIN_SIZES, hasCollision, rectsOverlap, isInBounds, computeCellDimensions, GRID_GAP } from '../../lib/gridLayout';
+import {
+  type GridCardConfig, GRID_COLS, CARD_MIN_SIZES, hasCollision, rectsOverlap, isInBounds,
+  computeCellDimensions, readGridGap,
+} from '../../lib/gridLayout';
+import { DASHBOARD_PULSE_CLASS } from '../../lib/responsiveDashboard';
 
 interface GridCardProps {
   card: GridCardConfig;
@@ -27,16 +31,11 @@ interface DragState {
   origRowSpan: number;
   cellW: number;
   cellH: number;
+  gap: number;
   ghost: HTMLDivElement | null;
   ghostOffsetX: number;
   ghostOffsetY: number;
 }
-
-const PULSE_CLASS: Record<string, string> = {
-  red: 'animate-subtle-pulse animate-subtle-pulse--red',
-  peach: 'animate-subtle-pulse',
-  pink: 'animate-subtle-pulse animate-subtle-pulse--pink',
-};
 
 export function GridCard({
   card, label, editing, allCards, containerRef,
@@ -61,8 +60,8 @@ export function GridCard({
     const { card: c, allCards: all, gridMode: gm, totalRows: tr } = cardDataRef.current;
     const dx = e.clientX - ds.startX;
     const dy = e.clientY - ds.startY;
-    const step = ds.cellW + GRID_GAP;
-    const stepY = ds.cellH + GRID_GAP;
+    const step = ds.cellW + ds.gap;
+    const stepY = ds.cellH + ds.gap;
 
     if (ds.type === 'move') {
       if (ds.ghost) {
@@ -118,13 +117,13 @@ export function GridCard({
     }
   }, []);
 
-  const handlePointerUp = useCallback(() => {
+  const handlePointerUp = useCallback(function handlePointerUpEvent() {
     const ds = dragRef.current;
     if (!ds) return;
     if (ds.ghost) ds.ghost.remove();
     dragRef.current = null;
     document.removeEventListener('pointermove', handlePointerMove);
-    document.removeEventListener('pointerup', handlePointerUp);
+    document.removeEventListener('pointerup', handlePointerUpEvent);
   }, [handlePointerMove]);
 
   useEffect(() => {
@@ -142,7 +141,9 @@ export function GridCard({
     const el = containerRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const { cellWidth, cellHeight } = computeCellDimensions(rect.width, rect.height, gridMode, totalRows);
+    // Same pixel value the grid renders with: both come from --dashboard-gap.
+    const gap = readGridGap(el);
+    const { cellWidth, cellHeight } = computeCellDimensions(rect.width, rect.height, gridMode, totalRows, gap);
 
     let ghost: HTMLDivElement | null = null;
     let ghostOffsetX = 0;
@@ -151,7 +152,7 @@ export function GridCard({
     if (type === 'move' && cardRef.current) {
       ghost = document.createElement('div');
       const cardRect = cardRef.current.getBoundingClientRect();
-      ghost.className = 'fixed pointer-events-none z-[100] rounded-2xl bg-primary-light/15 border-2 border-primary-light/30 backdrop-blur-sm';
+      ghost.className = 'fixed pointer-events-none z-[100] rounded-[14px] bg-primary-light/15 border-2 border-primary-light/30 backdrop-blur-sm';
       ghost.style.width = `${cardRect.width}px`;
       ghost.style.height = `${cardRect.height}px`;
       ghost.style.left = `${cardRect.left}px`;
@@ -171,6 +172,7 @@ export function GridCard({
       origRowSpan: card.rowSpan,
       cellW: cellWidth,
       cellH: cellHeight,
+      gap,
       ghost,
       ghostOffsetX,
       ghostOffsetY,
@@ -188,9 +190,9 @@ export function GridCard({
   return (
     <div
       ref={cardRef}
-      className={`bg-surface-light rounded-2xl border border-surface-lighter relative overflow-hidden ${
+      className={`bg-surface-light rounded-[14px] border border-surface-lighter relative overflow-hidden ${
         editing ? 'ring-1 ring-surface-lighter' : ''
-      } ${!editing && pulseColor ? PULSE_CLASS[pulseColor] : ''}`}
+      } ${!editing && pulseColor ? DASHBOARD_PULSE_CLASS[pulseColor] : ''}`}
       style={style}
     >
       {editing && (
@@ -218,7 +220,8 @@ export function GridCard({
           {/* Remove button */}
           <button
             onClick={() => onRemove(card.id)}
-            className="absolute top-1 right-2 z-10 w-5 h-5 flex items-center justify-center rounded-full text-accent-red/60 hover:text-accent-red text-xs"
+            aria-label={`Remove ${label} card`}
+            className="absolute top-1 right-2 z-10 w-5 h-5 pointer-coarse:w-8 pointer-coarse:h-8 pointer-coarse:top-0 pointer-coarse:right-0 flex items-center justify-center rounded-full text-accent-red/60 hover:text-accent-red text-xs"
           >
             ×
           </button>
@@ -226,7 +229,7 @@ export function GridCard({
           {/* Right resize handle */}
           <div
             onPointerDown={(e) => startDrag(e, 'resize-right')}
-            className="absolute right-0 top-2 bottom-2 w-3 cursor-col-resize z-10 touch-none select-none group"
+            className="absolute right-0 top-2 bottom-2 w-3 pointer-coarse:w-8 cursor-col-resize z-10 touch-none select-none group"
           >
             <div className="h-full w-0.5 mx-auto rounded-full bg-text-dim/20 group-hover:bg-primary-light/50 transition-colors" />
           </div>
@@ -234,7 +237,7 @@ export function GridCard({
           {/* Bottom resize handle */}
           <div
             onPointerDown={(e) => startDrag(e, 'resize-bottom')}
-            className="absolute bottom-0 left-2 right-2 h-3 cursor-row-resize z-10 touch-none select-none group"
+            className="absolute bottom-0 left-2 right-2 h-3 pointer-coarse:h-8 cursor-row-resize z-10 touch-none select-none group"
           >
             <div className="w-full h-0.5 my-auto rounded-full bg-text-dim/20 group-hover:bg-primary-light/50 transition-colors" />
           </div>
@@ -242,7 +245,7 @@ export function GridCard({
           {/* Corner resize handle */}
           <div
             onPointerDown={(e) => startDrag(e, 'resize-corner')}
-            className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize z-10 touch-none select-none group"
+            className="absolute bottom-0 right-0 w-5 h-5 pointer-coarse:w-8 pointer-coarse:h-8 cursor-nwse-resize z-10 touch-none select-none group"
           >
             <svg className="absolute bottom-1 right-1 w-3 h-3 text-text-dim/30 group-hover:text-primary-light/60 transition-colors" viewBox="0 0 10 10">
               <path d="M9 1v8H1" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -254,7 +257,9 @@ export function GridCard({
       {/* Card content */}
       <div className="@container w-full h-full overflow-hidden">
         <div
-          className={`flex flex-col overflow-y-auto overflow-x-hidden h-full ${editing ? 'px-3 pb-3 pt-7' : 'px-3 pb-3 pt-2.5'}`}
+          className={`dashboard-card-content flex flex-col overflow-y-auto overflow-x-hidden h-full ${
+            editing ? 'dashboard-card-content--editing' : ''
+          }`}
         >
           {children}
         </div>

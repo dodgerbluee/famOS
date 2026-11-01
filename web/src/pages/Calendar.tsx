@@ -8,6 +8,7 @@ import { AddEventForm } from '../components/calendar/AddEventForm';
 import { EventDetail } from '../components/calendar/EventDetail';
 import { useCalendarEvents } from '../lib/calendarQuery';
 import { invalidateQueriesWithPrefix, useQuery } from '../lib/query';
+import { useContainerWidth } from '../hooks/useContainerWidth';
 import { endOfDayInTimezone, endOfMonthInTimezone, endOfWeekInTimezone, formatDate, startOfDayInTimezone, startOfMonthInTimezone, startOfWeekInTimezone, todayInTimezone, useTimezone } from '../lib/timezone';
 
 type ViewMode = 'day' | 'week' | 'month';
@@ -40,15 +41,18 @@ function viewRange(currentDate: Date, viewMode: ViewMode, timezone: string) {
 }
 
 export function Calendar() {
-  const [viewMode, setViewMode] = useState<ViewMode>(() =>
-    window.matchMedia('(min-width: 768px)').matches ? 'month' : 'day'
-  );
+  const [manualView, setManualView] = useState<ViewMode | null>(null);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{ results: SyncResult[]; show: boolean } | null>(null);
   const [adding, setAdding] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const timezone = useTimezone();
+  const { ref: containerRef, width: containerWidth } = useContainerWidth<HTMLDivElement>();
+  const automaticView: ViewMode = containerWidth === 0 ? 'month' : containerWidth < 720 ? 'day' : containerWidth < 1100 ? 'week' : 'month';
+  const viewMode = manualView ?? automaticView;
+  const compactWeek = containerWidth > 0 && containerWidth < 760;
+  const stackedToolbar = containerWidth > 0 && containerWidth < 640;
 
   const range = useMemo(() => viewRange(currentDate, viewMode, timezone), [currentDate, viewMode, timezone]);
   const weekStart = useMemo(() => startOfWeekInTimezone(currentDate, timezone), [currentDate, timezone]);
@@ -111,11 +115,11 @@ export function Calendar() {
   const showSpinner = loading && events.length === 0;
 
   return (
-    <div className="flex flex-col h-full -m-4 p-4 overflow-hidden">
+    <div ref={containerRef} className="flex h-full min-h-0 flex-col overflow-hidden p-[var(--page-gutter)]">
       {/* Header bar */}
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-3 shrink-0">
+      <div className={`mb-3 shrink-0 gap-2 ${stackedToolbar ? 'flex flex-col' : 'flex items-center justify-between'}`}>
         {/* Left: nav arrows + heading + today */}
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <button
             onClick={() => navigate(-1)}
             className="w-8 h-8 flex items-center justify-center rounded-lg text-text-dim hover:text-text-bright hover:bg-surface-lighter transition-colors"
@@ -128,10 +132,10 @@ export function Calendar() {
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
           </button>
-          <h1 className="text-lg font-semibold text-text-bright ml-1">{heading}</h1>
+          <h1 className="ml-1 min-w-0 flex-1 truncate text-lg font-semibold text-text-bright">{heading}</h1>
           <button
             onClick={() => setCurrentDate(todayInTimezone(timezone))}
-            className="ml-2 text-xs font-semibold text-primary-light bg-primary-light/10 hover:bg-primary-light/20 px-2.5 py-1 rounded-lg transition-colors"
+            className="ml-1 shrink-0 rounded-lg bg-primary-light/10 px-2.5 py-1 text-xs font-semibold text-primary-light transition-colors hover:bg-primary-light/20"
           >
             Today
           </button>
@@ -144,7 +148,7 @@ export function Calendar() {
             {(['day', 'week', 'month'] as const).map((mode) => (
               <button
                 key={mode}
-                onClick={() => setViewMode(mode)}
+                onClick={() => setManualView(mode)}
                 className={`px-2 md:px-3 py-1.5 rounded-md text-xs font-semibold capitalize transition-all ${
                   viewMode === mode
                     ? 'bg-surface-light text-text-bright shadow-sm'
@@ -212,7 +216,7 @@ export function Calendar() {
       )}
 
       {/* Calendar view */}
-      <div className="flex-1 min-h-0 overflow-y-auto rounded-2xl bg-surface-light border border-surface-lighter p-4 flex flex-col">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-card border border-border-subtle bg-panel-raised p-3 sm:p-4">
         {showSpinner ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -220,12 +224,14 @@ export function Calendar() {
         ) : (
           <>
             {viewMode === 'day' && (
-              <DayView
-                date={currentDate}
-                events={events}
-                onDateChange={setCurrentDate}
-                onEventSelect={setSelectedEvent}
-              />
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <DayView
+                  date={currentDate}
+                  events={events}
+                  onDateChange={setCurrentDate}
+                  onEventSelect={setSelectedEvent}
+                />
+              </div>
             )}
             {viewMode === 'week' && (
               <WeekView
@@ -234,6 +240,8 @@ export function Calendar() {
                 onDateChange={setCurrentDate}
                 onEventSelect={setSelectedEvent}
                 showHeader={false}
+                compact={compactWeek}
+                fill
               />
             )}
             {viewMode === 'month' && (
@@ -243,7 +251,7 @@ export function Calendar() {
                 onDateChange={setCurrentDate}
                 onDaySelect={(d) => {
                   setCurrentDate(d);
-                  setViewMode('day');
+                  setManualView('day');
                 }}
                 onEventSelect={setSelectedEvent}
               />

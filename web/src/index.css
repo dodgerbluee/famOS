@@ -1,67 +1,135 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #6366f1;
-  --color-primary-light: #818cf8;
-  --color-primary-dark: #4f46e5;
-  --color-surface: #121212;
-  --color-surface-light: #1a1a1a;
-  --color-surface-lighter: #2d2d2d;
-  --color-bg: #0a0a0a;
-  --color-text: #e0e0e0;
-  --color-text-dim: #b0b0b0;
-  --color-text-bright: #ffffff;
-  --color-accent-green: #a6e3a1;
-  --color-accent-red: #f38ba8;
-  --color-accent-yellow: #f9e2af;
-  --color-accent-blue: #89b4fa;
-  --color-accent-pink: #f5c2e7;
-  --color-accent-peach: #fab387;
+  --color-canvas: #090b10;
+  --color-panel: #11151c;
+  --color-panel-raised: #171c25;
+  --color-panel-hover: #202735;
+  --color-border: #293242;
+  --color-border-subtle: #202734;
+
+  --color-ink: #f4f7fb;
+  --color-ink-muted: #a3adbd;
+  --color-ink-faint: #737f91;
+
+  --color-brand: #7c83ff;
+  --color-brand-strong: #6366f1;
+  --color-brand-soft: #a5a9ff;
+
+  --color-positive: #72d6a0;
+  --color-negative: #ff7f96;
+  --color-warning: #f4c76b;
+  --color-info: #78b7ff;
+  --color-highlight: #e99be0;
+
+  /* Compatibility aliases while component classes move to semantic names. */
+  --color-bg: var(--color-canvas);
+  --color-surface: var(--color-panel);
+  --color-surface-light: var(--color-panel-raised);
+  --color-surface-lighter: var(--color-panel-hover);
+  --color-text: var(--color-ink);
+  --color-text-dim: var(--color-ink-muted);
+  --color-text-bright: var(--color-ink);
+  --color-primary: var(--color-brand);
+  --color-primary-light: var(--color-brand-soft);
+  --color-primary-dark: var(--color-brand-strong);
+  --color-accent-green: var(--color-positive);
+  --color-accent-red: var(--color-negative);
+  --color-accent-yellow: var(--color-warning);
+  --color-accent-blue: var(--color-info);
+  --color-accent-pink: var(--color-highlight);
+  --color-accent-peach: #f2ad7f;
+
+  --radius-control: 10px;
+  --radius-card: 14px;
+  --radius-dialog: 18px;
+  --breakpoint-xs: 37.5rem;
+  --breakpoint-rail: 56.25rem;
+  --breakpoint-wide: 75rem;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --default-transition-duration: 120ms;
+}
+
+:root {
+  --shell-gap: clamp(0.5rem, 0.7vw, 0.875rem);
+  --page-gutter: clamp(0.75rem, 1.2vw, 1.5rem);
+  --card-gap: clamp(0.625rem, 0.9vw, 1rem);
+  --dashboard-gap: 10px;
+  --topbar-height: 3.5rem;
+  --rail-width: 4.5rem;
+}
+
+@media (min-width: 75rem) {
+  :root { --rail-width: 4.75rem; }
+}
+
+@media (min-width: 56.25rem) {
+  :root { --dashboard-gap: 12px; }
+}
+
+@media (min-width: 90rem) {
+  :root { --dashboard-gap: 16px; }
+}
+
+@media (min-width: 120rem) and (min-height: 62.5rem) {
+  :root { --rail-width: 5rem; }
+  html { font-size: 18px; }
 }
 
 html, body, #root {
-  height: 100%;
+  min-height: 100%;
+  height: 100dvh;
   margin: 0;
   color-scheme: dark;
-  background-color: var(--color-bg);
-  color: var(--color-text);
-  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
   -webkit-tap-highlight-color: transparent;
-  user-select: none;
   overflow: hidden;
 }
 
-*:not(select):not(option) {
+body {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+nav, button, [data-drag-handle] {
+  user-select: none;
+  -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
 
-select, input, textarea {
-  user-select: text;
-  -webkit-user-select: text;
+select, input, textarea { user-select: text; -webkit-user-select: text; }
+
+.app-canvas {
+  background-color: var(--color-canvas);
+  background-image:
+    radial-gradient(60rem 36rem at 6% -10%, rgb(124 131 255 / 0.11), transparent 62%),
+    radial-gradient(45rem 32rem at 100% 100%, rgb(120 183 255 / 0.045), transparent 65%);
+  background-repeat: no-repeat;
 }
 
-::-webkit-scrollbar {
-  width: 4px;
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-top { padding-top: env(safe-area-inset-top); }
+.scrollbar-hide { scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.tabular-nums { font-variant-numeric: tabular-nums; }
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--color-surface-lighter);
-  border-radius: 2px;
-}
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-panel-hover); border-radius: 999px; }
 
 @keyframes subtle-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.9; }
 }
 
-.animate-subtle-pulse {
-  position: relative;
-}
-
+.animate-subtle-pulse { position: relative; }
 .animate-subtle-pulse::after {
   content: '';
   position: absolute;
@@ -71,15 +139,27 @@ select, input, textarea {
   pointer-events: none;
   animation: subtle-pulse 3s ease-in-out infinite;
 }
-
 .animate-subtle-pulse--red { --pulse-color: var(--color-accent-red); }
 .animate-subtle-pulse--pink { --pulse-color: var(--color-accent-pink); }
 
-@view-transition {
-  navigation: auto;
+@keyframes overlay-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sheet-slide-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.animate-overlay-fade-in { animation: overlay-fade-in 180ms ease-out; }
+.animate-sheet-slide-in { animation: sheet-slide-in 180ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation-duration: 180ms;
-}
+@view-transition { navigation: auto; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 180ms; }
+
+.dashboard-card-content { padding: 10px; }
+@container (min-width: 420px) { .dashboard-card-content { padding: 14px; } }
+@container (min-width: 700px) { .dashboard-card-content { padding: 18px; } }
+.dashboard-card-content--editing { padding-top: 28px; }

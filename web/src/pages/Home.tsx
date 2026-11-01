@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo, type ReactNode } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo, type ReactNode, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useShell } from '../contexts/ShellContext';
 import { api, type AccountWithMember, type CalendarEvent, type DashboardPayload } from '../api/client';
@@ -23,11 +23,14 @@ import { CARD_ICONS } from '../components/layout/CardIcons';
 import {
   type DashboardLayout,
   DEFAULT_GRID_LAYOUT, SIMPLE_KIOSK_LAYOUT, migrateLayout, findEmptySlot,
-  CARD_MIN_SIZES,
+  CARD_MIN_SIZES, resolveRenderMode,
 } from '../lib/gridLayout';
+import {
+  COMPACT_CARD_ORDER, DASHBOARD_PULSE_CLASS, MEDIUM_CARD_LAYOUT, MEDIUM_CARD_ORDER, MEDIUM_GRID_COLS, filterCardOrder,
+} from '../lib/responsiveDashboard';
+import { useLayoutTier, useElementSize } from '../hooks/useLayoutTier';
 import { eventSpansDate } from '../lib/calendar';
 import { addDaysInTimezone, addMonthsInTimezone, endOfMonthInTimezone, formatDate, formatTime, fromDateKey, getDateKey, getHour, startOfMonthInTimezone, startOfWeekInTimezone, useTimezone } from '../lib/timezone';
-import { useIsMobile } from '../hooks/useIsMobile';
 
 interface CardDef {
   id: string;
@@ -45,11 +48,6 @@ const CARD_DEFS: CardDef[] = [
   { id: 'media', label: 'Media' },
   { id: 'sanders-cash', label: 'Sanders Cash' },
   { id: 'weather', label: 'Weather' },
-];
-
-const MOBILE_CARD_ORDER = [
-  'briefing', 'day-calendar', 'sanders-cash', 'chores', 'weather',
-  'week-calendar', 'month-calendar', 'tasks', 'services', 'media',
 ];
 
 const EMPTY_EVENTS: CalendarEvent[] = [];
@@ -87,8 +85,9 @@ export function Home() {
   const { editing, setEditing } = useShell();
   const layoutSnapshotRef = useRef<DashboardLayout | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const gridAreaRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
   const timezone = useTimezone();
 
   useEffect(() => {
@@ -153,6 +152,23 @@ export function Home() {
       layoutSnapshotRef.current = null;
     }
   }, [editing, layout]);
+
+  // Tiers come from the width of the home content container, not the viewport,
+  // so a rail or a scrollbar changes them the way the space actually does.
+  const tier = useLayoutTier(contentRef);
+  const { height: gridAreaHeight } = useElementSize(gridAreaRef);
+  const isWide = tier === 'wide';
+  const editingWide = isWide && editing;
+  // A saved `fill` preference renders with scroll row sizing when the dashboard
+  // area is too short. This is a render-only fallback; the saved preference and
+  // layout are never modified by it.
+  const renderMode = resolveRenderMode(layout.mode, gridAreaHeight);
+
+  // Leaving wide mode while editing drops the editor. The layout is left
+  // exactly as it is: no revert, no extra write.
+  useEffect(() => {
+    if (!isWide && editing) setEditing(false);
+  }, [isWide, editing, setEditing]);
 
   useWebSocket((msg) => {
     if (msg.type === 'sanders_cash_accounts') setAccounts(msg.payload as AccountWithMember[]);
@@ -339,13 +355,14 @@ export function Home() {
     return undefined;
   };
 
-  const mobileCards = MOBILE_CARD_ORDER.filter((id) => layout.cards.some((c) => c.id === id));
+  const compactCards = useMemo(() => filterCardOrder(COMPACT_CARD_ORDER, layout.cards), [layout.cards]);
+  const mediumCards = useMemo(() => filterCardOrder(MEDIUM_CARD_ORDER, layout.cards), [layout.cards]);
   const showSkeleton = !dashboard;
 
   return (
-    <div className="flex flex-col h-full -m-4">
-      {!isMobile && editing && (
-        <div className="mx-4 mb-2 bg-primary-light/10 border border-primary-light/20 rounded-xl px-4 py-2.5 flex items-center justify-between shrink-0">
+    <div ref={contentRef} className="flex h-full flex-col p-[var(--page-gutter)]">
+      {editingWide && (
+        <div className="mb-3 bg-primary-light/10 border border-primary-light/20 rounded-xl px-4 py-2.5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-4">
             <div className="text-sm text-text-bright">
               <span className="font-semibold">Editing layout</span>
@@ -367,6 +384,9 @@ export function Home() {
             >
               Simple kiosk
             </button>
+            {renderMode === 'scroll' && layout.mode === 'fill' && (
+              <span className="text-xs text-text-dim">Too short to fit — scrolling for this session</span>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <button onClick={cancelEditing} className="text-text-dim text-sm font-medium hover:text-text-bright transition-colors">
@@ -379,65 +399,123 @@ export function Home() {
         </div>
       )}
 
-      {isMobile ? (
-        <div className="flex-1 px-4 pt-4 pb-4 overflow-y-auto">
-          <div className="flex flex-col gap-4">
-            {mobileCards.map((cardId) => (
-              <div key={cardId} className="bg-surface-light rounded-2xl border border-surface-lighter p-3">
-                {showSkeleton ? <CardSkeleton /> : renderCard(cardId)}
+      <div
+        ref={gridAreaRef}
+        className={`flex-1 min-h-0 ${tier === 'wide' && renderMode === 'fill' ? 'overflow-hidden' : 'overflow-y-auto'}`}
+      >
+        {tier === 'wide' && (
+          <div className={renderMode === 'fill' ? 'flex flex-col h-full' : 'flex flex-col'}>
+            <div className={renderMode === 'fill' ? 'flex-1 min-h-0' : undefined}>
+              <DashboardGrid layout={layout} mode={renderMode} editing={editingWide} containerRef={gridRef}>
+                {layout.cards.map((card) => {
+                  const def = CARD_DEFS.find((d) => d.id === card.id);
+                  if (!def) return null;
+                  return (
+                    <GridCard
+                      key={card.id}
+                      card={card}
+                      label={def.label}
+                      editing={editingWide}
+                      allCards={layout.cards}
+                      containerRef={gridRef}
+                      gridMode={renderMode}
+                      totalRows={layout.totalRows}
+                      pulseColor={cardPulse(card.id)}
+                      onMove={handleMove}
+                      onSwap={handleSwap}
+                      onResize={handleResize}
+                      onRemove={handleRemove}
+                    >
+                      <ErrorBoundary>
+                        {showSkeleton ? <CardSkeleton /> : renderCard(card.id)}
+                      </ErrorBoundary>
+                    </GridCard>
+                  );
+                })}
+              </DashboardGrid>
+            </div>
+
+            {editingWide && hiddenCards.length > 0 && (
+              <div className="bg-surface rounded-[14px] p-4 mt-3 shrink-0">
+                <p className="text-text-dim text-xs font-medium uppercase tracking-wide mb-2">Add card</p>
+                <div className="flex flex-wrap gap-2">
+                  {hiddenCards.map((def) => (
+                    <button
+                      key={def.id}
+                      onClick={() => handleAdd(def.id)}
+                      className="flex items-center gap-1.5 bg-surface-light hover:bg-surface-lighter text-text-dim hover:text-text-bright px-3 py-1.5 rounded-lg text-sm transition-colors"
+                    >
+                      <span className="text-text-dim">{CARD_ICONS[def.id]}</span>
+                      <span>{def.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
+            )}
+          </div>
+        )}
+
+        {tier === 'medium' && (
+          <div
+            className="grid"
+            style={{
+              gridTemplateColumns: `repeat(${MEDIUM_GRID_COLS}, minmax(0, 1fr))`,
+              gridAutoRows: 'min-content',
+              gap: 'var(--dashboard-gap)',
+            }}
+          >
+            {mediumCards.map((cardId) => (
+              <FlowCard
+                key={cardId}
+                pulseColor={cardPulse(cardId)}
+                style={{ gridColumn: `span ${MEDIUM_CARD_LAYOUT[cardId].colSpan}`, minHeight: MEDIUM_CARD_LAYOUT[cardId].minHeight }}
+              >
+                <ErrorBoundary>
+                  {showSkeleton ? <CardSkeleton /> : renderCard(cardId)}
+                </ErrorBoundary>
+              </FlowCard>
             ))}
           </div>
-        </div>
-      ) : (
-        <div className={`flex-1 px-4 pt-4 ${layout.mode === 'scroll' ? 'overflow-y-auto pb-4' : 'overflow-hidden'}`}>
-          <DashboardGrid layout={layout} editing={editing} containerRef={gridRef}>
-            {layout.cards.map((card) => {
-              const def = CARD_DEFS.find((d) => d.id === card.id);
-              if (!def) return null;
-              return (
-                <GridCard
-                  key={card.id}
-                  card={card}
-                  label={def.label}
-                  editing={editing}
-                  allCards={layout.cards}
-                  containerRef={gridRef}
-                  gridMode={layout.mode}
-                  totalRows={layout.totalRows}
-                  pulseColor={cardPulse(card.id)}
-                  onMove={handleMove}
-                  onSwap={handleSwap}
-                  onResize={handleResize}
-                  onRemove={handleRemove}
-                >
-                  <ErrorBoundary>
-                    {showSkeleton ? <CardSkeleton /> : renderCard(card.id)}
-                  </ErrorBoundary>
-                </GridCard>
-              );
-            })}
-          </DashboardGrid>
+        )}
 
-          {editing && hiddenCards.length > 0 && (
-            <div className="bg-surface rounded-2xl p-4 mt-4">
-              <p className="text-text-dim text-xs font-medium uppercase tracking-wide mb-2">Add card</p>
-              <div className="flex flex-wrap gap-2">
-                {hiddenCards.map((def) => (
-                  <button
-                    key={def.id}
-                    onClick={() => handleAdd(def.id)}
-                    className="flex items-center gap-1.5 bg-surface-light hover:bg-surface-lighter text-text-dim hover:text-text-bright px-3 py-1.5 rounded-lg text-sm transition-colors"
-                  >
-                    <span className="text-text-dim">{CARD_ICONS[def.id]}</span>
-                    <span>{def.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+        {tier === 'compact' && (
+          <div className="flex flex-col" style={{ gap: 'var(--dashboard-gap)' }}>
+            {compactCards.map((cardId) => (
+              <FlowCard key={cardId}>
+                {showSkeleton ? <CardSkeleton /> : renderCard(cardId)}
+              </FlowCard>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Card surface used by the two flow tiers. Height is intrinsic: content is
+ * never squeezed into a fixed box, so calendar and weather content stays
+ * reachable. Wide mode uses GridCard instead, which owns drag/resize.
+ */
+function FlowCard({
+  pulseColor, style, children,
+}: {
+  pulseColor?: 'red' | 'peach' | 'pink';
+  style?: CSSProperties;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={`bg-surface-light rounded-[14px] border border-surface-lighter relative overflow-hidden ${
+        pulseColor ? DASHBOARD_PULSE_CLASS[pulseColor] : ''
+      }`}
+      style={style}
+    >
+      <div className="@container w-full h-full overflow-hidden">
+        <div className="dashboard-card-content flex flex-col overflow-y-auto overflow-x-hidden h-full">
+          {children}
         </div>
-      )}
+      </div>
     </div>
   );
 }

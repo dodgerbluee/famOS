@@ -58,7 +58,7 @@ export function RewardStore() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-[var(--page-gutter)]">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <h1 className="text-2xl font-bold text-text-bright">Reward Store</h1>
         <div className="flex items-center gap-2">

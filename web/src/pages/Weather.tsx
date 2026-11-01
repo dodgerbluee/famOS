@@ -30,20 +30,20 @@ export function Weather() {
   const aq = weather.airQuality;
 
   return (
-    <div className="h-full -m-4 p-4 flex flex-col gap-4 overflow-hidden">
+    <div className="flex h-full flex-col gap-4 overflow-y-auto p-[var(--page-gutter)]">
 
-      {/* ── Top: Current + Details side-by-side ── */}
-      <div className="grid grid-cols-[1fr_auto] gap-4 shrink-0">
+      {/* ── Top: Current + Details. Stacked on narrow screens, wrapping side-by-side from 768px ── */}
+      <div className="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-center">
 
         {/* Current conditions */}
-        <div className="flex items-center gap-5">
-          <span className="text-6xl leading-none">{icon}</span>
-          <div>
-            <div className="flex items-baseline gap-3">
+        <div className="flex items-center gap-4 sm:gap-5 min-w-0">
+          <span className="text-6xl leading-none shrink-0">{icon}</span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="text-5xl font-bold text-text-bright tracking-tight">{Math.round(weather.temperature)}°</span>
               <span className="text-text-dim text-lg">{weather.condition}</span>
             </div>
-            <div className="flex items-center gap-4 mt-1.5 text-sm">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-sm">
               <span className="text-accent-red">H {Math.round(weather.high)}°</span>
               <span className="text-accent-blue">L {Math.round(weather.low)}°</span>
               {weather.feelsLike && Math.round(weather.feelsLike) !== Math.round(weather.temperature) && (
@@ -53,24 +53,24 @@ export function Weather() {
           </div>
         </div>
 
-        {/* Sun times */}
-        <div className="flex items-center gap-6 px-5 py-3 rounded-2xl bg-surface-light border border-surface-lighter">
+        {/* Sun times stay a horizontal row at every width */}
+        <div className="flex items-center gap-4 sm:gap-6 self-start md:self-auto px-5 py-3 rounded-2xl bg-surface-light border border-surface-lighter">
           <SunBlock label="Sunrise" time={formatTime(weather.sunrise, timezone)} icon={<SunriseIcon />} />
           <SunBlock label="Sunset" time={formatTime(weather.sunset, timezone)} icon={<SunsetIcon />} />
           {dusk && <SunBlock label="Dusk" time={formatTime(dusk, timezone)} icon={<DuskIcon />} />}
         </div>
       </div>
 
-      {/* ── Hourly strip ── */}
+      {/* ── Hourly strip: fixed-size items in an overflow-x scroller ── */}
       {weather.hourly && weather.hourly.length > 0 && (
         <div className="shrink-0 rounded-2xl bg-surface-light border border-surface-lighter px-4 py-3">
-          <div className="flex justify-between">
+          <div className="flex gap-1 overflow-x-auto pb-1">
             {weather.hourly.slice(0, 12).map((h) => {
               const hour = formatDate(h.time, timezone, { hour: 'numeric' });
               const hIcon = CONDITION_ICONS[h.condition] || '🌤️';
               return (
-                <div key={h.time} className="flex flex-col items-center gap-1 min-w-0">
-                  <span className="text-text-dim text-[11px]">{hour}</span>
+                <div key={h.time} className="flex flex-col items-center gap-1 shrink-0 min-w-[52px] px-1">
+                  <span className="text-text-dim text-[11px] whitespace-nowrap">{hour}</span>
                   <span className="text-lg leading-none">{hIcon}</span>
                   <span className="text-text-bright text-sm font-semibold">{Math.round(h.temperature)}°</span>
                   {h.precipProb > 0 ? (
@@ -85,13 +85,14 @@ export function Weather() {
         </div>
       )}
 
-      {/* ── Bottom: 7-day + Conditions grid ── */}
-      <div className="flex-1 grid grid-cols-2 gap-4 min-h-0">
+      {/* ── Bottom: 7-day + Conditions grid ──
+          one column below 768px, two columns from 768px up ── */}
+      <div className="grid gap-4 md:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.1fr)]">
 
         {/* 7-Day forecast */}
         <div className="rounded-2xl bg-surface-light border border-surface-lighter px-5 py-4 flex flex-col">
           <p className="text-text-dim text-[11px] font-semibold uppercase tracking-widest mb-3">7-Day Forecast</p>
-          <div className="flex-1 flex flex-col justify-between">
+          <div className="flex-1 flex flex-col justify-between gap-2">
             {(weather.daily || []).map((d) => {
               const dayIcon = CONDITION_ICONS[d.condition] || '🌤️';
               const dayLabel = formatDate(d.date + 'T12:00', timezone, { weekday: 'short' });
@@ -116,8 +117,8 @@ export function Weather() {
           </div>
         </div>
 
-        {/* Conditions grid */}
-        <div className="grid grid-cols-3 grid-rows-3 gap-3 min-h-0">
+        {/* Conditions grid: two columns below 1200px, three from 1200px up */}
+        <div className="grid grid-cols-2 gap-3 min-[1200px]:grid-cols-3">
           <ConditionTile label="Humidity" value={`${weather.humidity}%`} sub={weather.humidity > 70 ? 'Muggy' : weather.humidity < 30 ? 'Dry' : 'Comfortable'} />
           <ConditionTile label="Wind" value={`${Math.round(weather.windSpeed)}`} unit="mph" sub={weather.windSpeed > 20 ? 'Gusty' : weather.windSpeed > 10 ? 'Moderate' : 'Light'} />
           <ConditionTile
@@ -168,7 +169,7 @@ function ConditionTile({ label, value, unit, sub, accent }: { label: string; val
 
 function InsightTile({ insight }: { insight: WeatherInsight | null }) {
   if (!insight?.summary) {
-    return <div className="rounded-2xl bg-surface-light border border-surface-lighter" />;
+    return <div className="rounded-2xl bg-surface-light border border-surface-lighter min-h-[72px]" />;
   }
   return (
     <div className="rounded-2xl bg-surface-light border border-surface-lighter px-4 py-3 flex flex-col justify-between col-span-2">

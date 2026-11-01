@@ -30,7 +30,7 @@ export function Cameras() {
   }, [searchParams, setSearchParams]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 p-[var(--page-gutter)]">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-bold text-text-bright">Cameras</h1>
         <div className="flex items-center gap-3">
