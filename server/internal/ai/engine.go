@@ -136,6 +136,7 @@ func (e *Engine) CachedBriefing() *DailyBriefing {
 	if json.Unmarshal([]byte(cached), &result) != nil {
 		return nil
 	}
+	result = normalizeDailyBriefing(result, time.Now().In(e.location).Format("2006-01-02"))
 	return &result
 }
 
@@ -151,19 +152,10 @@ func (e *Engine) GenerateDailyBriefing(ctx context.Context, eventsJSON, weatherJ
 		if cached := e.getCache(cacheKey); cached != "" {
 			var result DailyBriefing
 			if json.Unmarshal([]byte(cached), &result) == nil {
+				result = normalizeDailyBriefing(result, time.Now().In(e.location).Format("2006-01-02"))
 				return &result, nil
 			}
 		}
-	}
-
-	type legacyDailyBriefing struct {
-		Date               string   `json:"date"`
-		Summary            string   `json:"summary"`
-		Highlights         []string `json:"highlights"`
-		WeatherSummary     string   `json:"weatherSummary"`
-		CalendarSummary    string   `json:"calendarSummary"`
-		SandersCashNote    string   `json:"sandersCashNote"`
-		SandersCashSummary string   `json:"sandersCashSummary"`
 	}
 
 	now := time.Now().In(e.location)
@@ -199,24 +191,11 @@ Be warm, practical, and family-friendly. Keep it concise.`, partOfDay, eventsJSO
 		return nil, err
 	}
 
-	var result DailyBriefing
-	var legacy legacyDailyBriefing
-	jsonText := extractJSON(resp.Text)
-	if err := json.Unmarshal([]byte(jsonText), &result); err != nil {
-		if err := json.Unmarshal([]byte(jsonText), &legacy); err == nil {
-			result = DailyBriefing{
-				Date:               legacy.Date,
-				Summary:            legacy.Summary,
-				Highlights:         legacy.Highlights,
-				WeatherSummary:     legacy.WeatherSummary,
-				CalendarSummary:    legacy.CalendarSummary,
-				SandersCashSummary: firstNonEmptyBriefing(legacy.SandersCashSummary, legacy.SandersCashNote),
-			}
-		} else {
-			result = DailyBriefing{Date: today, Summary: resp.Text}
-		}
+	result, parsed := parseDailyBriefing(resp.Text)
+	result = normalizeDailyBriefing(result, today)
+	if !parsed {
+		log.Printf("briefing: model returned malformed JSON; recovered available fields; raw=%q", truncateForLog(resp.Text, 500))
 	}
-	result.Date = today
 	if result.Summary == "" {
 		log.Printf("briefing: model returned JSON without a usable summary; raw=%q", truncateForLog(resp.Text, 500))
 		result.Summary = fallbackBriefingSummary(result)
@@ -352,7 +331,24 @@ func extractJSON(text string) string {
 	start := -1
 	end := -1
 	depth := 0
-	for i, c := range text {
+	inString := false
+	escaped := false
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		if inString {
+			if escaped {
+				escaped = false
+			} else if c == '\\' {
+				escaped = true
+			} else if c == '"' {
+				inString = false
+			}
+			continue
+		}
+		if c == '"' && depth > 0 {
+			inString = true
+			continue
+		}
 		if c == '{' {
 			if depth == 0 {
 				start = i
