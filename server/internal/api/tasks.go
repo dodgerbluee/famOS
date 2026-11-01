@@ -52,7 +52,7 @@ func (h *TasksHandler) projectForRequest(w http.ResponseWriter, r *http.Request,
 
 	var projectID int64
 	var role string
-	err := h.db.QueryRow(`SELECT COALESCE(vikunja_project_id, 0), role FROM family_members WHERE id = ?`, memberID).Scan(&projectID, &role)
+	err := h.db.QueryRow(`SELECT COALESCE(vikunja_project_id, 0), role FROM family_members WHERE id = ? AND family_id = ?`, memberID, user.FamilyID).Scan(&projectID, &role)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "family member not found")
 		return 0, false

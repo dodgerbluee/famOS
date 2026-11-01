@@ -1,45 +1,46 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { api, type FamilyMember, type VikunjaTaskSimple } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
 export function Tasks() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const [tasks, setTasks] = useState<VikunjaTaskSimple[]>([]);
   const [members, setMembers] = useState<FamilyMember[]>([]);
-  const [selectedMemberId, setSelectedMemberId] = useState(user?.memberId || '');
+  const [selectedMemberId, setSelectedMemberId] = useState(user?.role === 'kiosk' ? '' : user?.memberId || '');
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [saving, setSaving] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const adults = members.filter((m) => m.role === 'admin' || m.role === 'parent');
+  const canManage = hasPermission('tasks.manage');
+  const effectiveMemberId = selectedMemberId || (user?.role === 'kiosk' ? adults[0]?.id || '' : user?.memberId || '');
 
   useEffect(() => {
     api.get<FamilyMember[]>('/api/family').then(setMembers).catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (!selectedMemberId && user?.memberId) {
-      setSelectedMemberId(user.memberId);
-    }
-  }, [selectedMemberId, user?.memberId]);
+    if (!effectiveMemberId) return;
+    let cancelled = false;
+    const q = `?memberId=${encodeURIComponent(effectiveMemberId)}`;
+    api.get<VikunjaTaskSimple[]>(`/api/tasks${q}`)
+      .then((next) => { if (!cancelled) setTasks(next); })
+      .catch(() => { if (!cancelled) setTasks([]); });
+    return () => { cancelled = true; };
+  }, [effectiveMemberId, refreshKey]);
 
-  const load = useCallback(() => {
-    if (!selectedMemberId) return;
-    const q = `?memberId=${encodeURIComponent(selectedMemberId)}`;
-    api.get<VikunjaTaskSimple[]>(`/api/tasks${q}`).then(setTasks).catch(() => setTasks([]));
-  }, [selectedMemberId]);
-
-  useEffect(() => { load(); }, [load]);
+  const load = () => setRefreshKey((key) => key + 1);
 
   const handleSubmit = async () => {
-    if (!title.trim() || !selectedMemberId) return;
+    if (!title.trim() || !effectiveMemberId) return;
     setSaving(true);
     try {
       await api.post('/api/tasks', {
         title: title.trim(),
         dueDate: dueDate || undefined,
-        memberId: selectedMemberId,
+        memberId: effectiveMemberId,
       });
       setTitle('');
       setDueDate('');
@@ -71,12 +72,14 @@ export function Tasks() {
           <h1 className="text-2xl font-bold text-text-bright">Tasks</h1>
           <p className="text-text-dim text-sm mt-0.5">Each adult has their own list. Kids' to-dos live on Chores.</p>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="bg-primary-light text-surface px-4 py-2 rounded-xl text-sm font-medium active:scale-95 transition-transform min-h-[44px] shrink-0"
-        >
-          {showForm ? 'Cancel' : '+ Add Task'}
-        </button>
+        {canManage && (
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="bg-primary-light text-surface px-4 py-2 rounded-xl text-sm font-medium active:scale-95 transition-transform min-h-[44px] shrink-0"
+          >
+            {showForm ? 'Cancel' : '+ Add Task'}
+          </button>
+        )}
       </div>
 
       {adults.length > 1 && (
@@ -86,9 +89,9 @@ export function Tasks() {
               key={member.id}
               onClick={() => setSelectedMemberId(member.id)}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${
-                selectedMemberId === member.id ? '' : 'bg-surface-light text-text-dim'
+                effectiveMemberId === member.id ? '' : 'bg-surface-light text-text-dim'
               }`}
-              style={selectedMemberId === member.id ? {
+              style={effectiveMemberId === member.id ? {
                 backgroundColor: member.color + '33',
                 color: member.color,
                 border: `1px solid ${member.color}`,
@@ -100,7 +103,7 @@ export function Tasks() {
         </div>
       )}
 
-      {showForm && (
+      {showForm && canManage && (
         <div className="bg-surface rounded-xl p-5 space-y-4">
           <h3 className="text-text-bright font-semibold">New Task</h3>
           <div>
@@ -155,7 +158,9 @@ export function Tasks() {
       </div>
 
       {tasks.length === 0 && !showForm && (
-        <p className="text-text-dim text-center py-8">No tasks yet. Tap "+ Add Task" to get started.</p>
+        <p className="text-text-dim text-center py-8">
+          {canManage ? 'No tasks yet. Tap "+ Add Task" to get started.' : 'No tasks for this family member.'}
+        </p>
       )}
     </div>
   );

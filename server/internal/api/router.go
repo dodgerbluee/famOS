@@ -259,7 +259,7 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 
 		// Tasks (adult task management)
 		r.With(auth.RequirePermission("tasks.view")).Get("/api/tasks", tasksHandler.ListMyTasks)
-		r.With(auth.RequirePermission("tasks.view")).Post("/api/tasks", tasksHandler.Create)
+		r.With(auth.RequirePermission("tasks.manage")).Post("/api/tasks", tasksHandler.Create)
 		r.Post("/api/tasks/{taskId}/complete", tasksHandler.Complete)
 		r.Post("/api/tasks/{taskId}/uncomplete", tasksHandler.Uncomplete)
 
