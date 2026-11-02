@@ -5,10 +5,12 @@ export function ChoresWidget() {
   const { data: templates = [], refetch: refetchTemplates } = useQuery<ChoreTemplate[]>(
     '/api/chore-templates',
     () => api.get<ChoreTemplate[]>('/api/chore-templates'),
+    { refetchInterval: 30_000 },
   );
   const { data: members = [] } = useQuery<FamilyMember[]>(
     '/api/family',
     () => api.get<FamilyMember[]>('/api/family'),
+    { refetchInterval: 60_000 },
   );
 
   const kids = members.filter((m) => m.role === 'kid');

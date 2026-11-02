@@ -89,10 +89,11 @@ export function refreshVisibleQueries() {
 export function useQuery<T>(
   key: string | null,
   fetcher: () => Promise<T>,
-  opts?: { staleTime?: number; enabled?: boolean },
+  opts?: { staleTime?: number; enabled?: boolean; refetchInterval?: number },
 ) {
   const staleTime = opts?.staleTime ?? 15_000;
   const enabled = opts?.enabled ?? true;
+  const refetchInterval = opts?.refetchInterval ?? 0;
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
   const [, bump] = useState(0);
@@ -138,6 +139,12 @@ export function useQuery<T>(
     invalidateQuery(key);
     bump((n) => n + 1);
   }, [key]);
+
+  useEffect(() => {
+    if (!key || !enabled || refetchInterval <= 0) return;
+    const timer = window.setInterval(refetch, refetchInterval);
+    return () => window.clearInterval(timer);
+  }, [key, enabled, refetchInterval, refetch]);
 
   return {
     data: (entry?.data as T | undefined),
