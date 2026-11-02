@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, type FamilyMember, type VikunjaTaskSimple } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -72,6 +73,10 @@ export function Tasks() {
           <h1 className="text-2xl font-bold text-text-bright">Tasks</h1>
           <p className="text-text-dim text-sm mt-0.5">Each adult has their own list. Kids' to-dos live on Chores.</p>
         </div>
+        <div className="flex gap-2">
+          <Link to="/activity" className="flex min-h-[44px] items-center rounded-xl border border-border-subtle bg-surface-light px-4 text-sm font-medium text-text-bright hover:bg-surface-lighter">
+            Activity
+          </Link>
         {canManage && (
           <button
             onClick={() => setShowForm(!showForm)}
@@ -80,6 +85,7 @@ export function Tasks() {
             {showForm ? 'Cancel' : '+ Add Task'}
           </button>
         )}
+        </div>
       </div>
 
       {adults.length > 1 && (

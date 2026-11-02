@@ -182,6 +182,7 @@ func (s *ChoreTemplateService) ListTemplatesWithStatus(ctx context.Context) ([]C
 
 	memberProjects := make(map[string]int64)
 	projectTasks := make(map[int64][]VikunjaTask)
+	now := time.Now().In(s.loc)
 
 	var result []ChoreTemplateWithStatus
 	for _, tmpl := range templates {
@@ -189,6 +190,7 @@ func (s *ChoreTemplateService) ListTemplatesWithStatus(ctx context.Context) ([]C
 			ChoreTemplate: tmpl,
 			Tasks:         []MemberTaskStatus{},
 		}
+		activeMembers := []string{}
 
 		for _, memberID := range tmpl.AssignedMembers {
 			if _, ok := memberProjects[memberID]; !ok {
@@ -202,21 +204,26 @@ func (s *ChoreTemplateService) ListTemplatesWithStatus(ctx context.Context) ([]C
 			}
 
 			for _, task := range s.loadProjectTasks(ctx, projectTasks, projectID) {
-				if taskHasLabel(task, tmpl.VikunjaLabel) {
+				if taskHasLabel(task, tmpl.VikunjaLabel) && taskVisibleOnChores(task, now, s.loc) {
 					tws.Tasks = append(tws.Tasks, MemberTaskStatus{
 						MemberID:      memberID,
 						VikunjaTaskID: task.ID,
 						Done:          task.Done,
 					})
+					activeMembers = append(activeMembers, memberID)
 					break
 				}
 			}
 		}
 
-		result = append(result, tws)
+		if len(tws.Tasks) > 0 {
+			tws.AssignedMembers = activeMembers
+			tws.IsShared = len(activeMembers) > 1
+			result = append(result, tws)
+		}
 	}
 
-	adHoc, err := s.adHocKidTasks(ctx, projectTasks)
+	adHoc, err := s.adHocKidTasks(ctx, projectTasks, now)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +250,7 @@ func (s *ChoreTemplateService) loadProjectTasks(ctx context.Context, cache map[i
 	return tasks
 }
 
-func (s *ChoreTemplateService) adHocKidTasks(ctx context.Context, projectTasks map[int64][]VikunjaTask) ([]ChoreTemplateWithStatus, error) {
+func (s *ChoreTemplateService) adHocKidTasks(ctx context.Context, projectTasks map[int64][]VikunjaTask, now time.Time) ([]ChoreTemplateWithStatus, error) {
 	rows, err := s.db.Query(`
 		SELECT id, COALESCE(vikunja_project_id, 0)
 		FROM family_members
@@ -275,7 +282,7 @@ func (s *ChoreTemplateService) adHocKidTasks(ctx context.Context, projectTasks m
 	var result []ChoreTemplateWithStatus
 	for _, kid := range kids {
 		for _, task := range s.loadProjectTasks(ctx, projectTasks, kid.projectID) {
-			if taskHasTemplateLabel(task) {
+			if taskHasTemplateLabel(task) || !taskVisibleOnChores(task, now, s.loc) {
 				continue
 			}
 			result = append(result, ChoreTemplateWithStatus{
@@ -297,6 +304,24 @@ func (s *ChoreTemplateService) adHocKidTasks(ctx context.Context, projectTasks m
 		}
 	}
 	return result, nil
+}
+
+// Chores appear only when their due day arrives. A missed chore remains visible
+// through the 3 AM grace period and then disappears because it can no longer be
+// completed. Undated legacy chores stay visible for backward compatibility.
+func taskVisibleOnChores(task VikunjaTask, now time.Time, loc *time.Location) bool {
+	if task.DueDate == "" {
+		return true
+	}
+	due, err := time.Parse(time.RFC3339, task.DueDate)
+	if err != nil {
+		return true
+	}
+	localDue := due.In(loc)
+	dueDay := time.Date(localDue.Year(), localDue.Month(), localDue.Day(), 0, 0, 0, 0, loc)
+	deadline := dueDay.AddDate(0, 0, 1).Add(3 * time.Hour)
+	localNow := now.In(loc)
+	return !localNow.Before(dueDay) && !localNow.After(deadline)
 }
 
 func taskHasLabel(task VikunjaTask, label string) bool {

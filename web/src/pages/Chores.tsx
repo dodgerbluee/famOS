@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { api, type ChoreTemplate, type FamilyMember } from '../api/client';
 import { useCurrencyName } from '../hooks/useCurrencyName';
 
@@ -53,12 +54,15 @@ export function Chores() {
           <h1 className="text-2xl font-bold text-text-bright">Chores</h1>
           <p className="text-text-dim text-sm mt-0.5">Kid chores. Add them here, or in a kid's Vikunja list. Adult to-dos live on Tasks.</p>
         </div>
-        <button
-          onClick={() => { setEditingId(null); setShowForm(!showForm); }}
-          className="bg-primary-light text-surface px-4 py-2 rounded-xl text-sm font-medium active:scale-95 transition-transform min-h-[44px] shrink-0"
-        >
-          {showForm ? 'Cancel' : '+ Add Chore'}
-        </button>
+        <div className="flex gap-2">
+          <Link to="/activity" className="flex min-h-[44px] items-center rounded-xl border border-border-subtle bg-surface-light px-4 text-sm font-medium text-text-bright hover:bg-surface-lighter">Activity</Link>
+          <button
+            onClick={() => { setEditingId(null); setShowForm(!showForm); }}
+            className="bg-primary-light text-surface px-4 py-2 rounded-xl text-sm font-medium active:scale-95 transition-transform min-h-[44px] shrink-0"
+          >
+            {showForm ? 'Cancel' : '+ Add Chore'}
+          </button>
+        </div>
       </div>
 
       {actionError && <p className="rounded-control border border-negative/20 bg-negative/10 px-3 py-2 text-sm text-negative">{actionError}</p>}

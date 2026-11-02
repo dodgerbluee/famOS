@@ -184,6 +184,55 @@ func TestListTemplatesWithStatus_IncludesAdHocKidTasks(t *testing.T) {
 	}
 }
 
+func TestTaskVisibleOnChoresOnlyDuringDueDayAndGracePeriod(t *testing.T) {
+	loc, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	due := time.Date(2026, time.November, 3, 18, 0, 0, 0, loc)
+	task := VikunjaTask{DueDate: due.Format(time.RFC3339)}
+
+	cases := []struct {
+		name string
+		now  time.Time
+		want bool
+	}{
+		{"day before", time.Date(2026, time.November, 2, 12, 0, 0, 0, loc), false},
+		{"due day", time.Date(2026, time.November, 3, 8, 0, 0, 0, loc), true},
+		{"grace period", time.Date(2026, time.November, 4, 2, 59, 0, 0, loc), true},
+		{"after grace", time.Date(2026, time.November, 4, 3, 1, 0, 0, loc), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := taskVisibleOnChores(task, tc.now, loc); got != tc.want {
+				t.Fatalf("visible = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestListTemplatesWithStatus_HidesFutureAdHocChores(t *testing.T) {
+	svc, mock, _ := setupTemplateTest(t)
+	now := time.Now().In(svc.loc)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 18, 0, 0, 0, svc.loc)
+	tomorrow := today.AddDate(0, 0, 1)
+	mock.projectTasks = map[int64][]VikunjaTask{
+		100: {
+			{ID: 55, Title: "Due today", ProjectID: 100, DueDate: today.Format(time.RFC3339)},
+			{ID: 56, Title: "Due tomorrow", ProjectID: 100, DueDate: tomorrow.Format(time.RFC3339)},
+		},
+		200: {},
+	}
+
+	listed, err := svc.ListTemplatesWithStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 || listed[0].Title != "Due today" {
+		t.Fatalf("listed chores = %+v, want only today's chore", listed)
+	}
+}
+
 type dbTouchingVikunja struct {
 	db    *db.DB
 	inner *mockVikunjaClient
