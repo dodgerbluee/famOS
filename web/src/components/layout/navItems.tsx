@@ -59,6 +59,17 @@ export const navItems: NavItem[] = [
     )),
   },
   {
+    to: '/activity', label: 'Activity', permission: 'dashboard.view',
+    icon: (active) => strokeIcon(active, (
+      <>
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+        <rect x="14" y="14" width="7" height="7" rx="1" />
+      </>
+    )),
+  },
+  {
     to: '/cameras', label: 'Cameras', permission: 'cameras.view',
     icon: (active) => strokeIcon(active, (
       <>

@@ -31,6 +31,7 @@ type Services struct {
 	Vikunja        *service.VikunjaService
 	Currency       *service.CurrencyService
 	ChoreTemplates *service.ChoreTemplateService
+	Activity       *service.ActivityService
 }
 
 func NewServices(database *db.DB, cfg *config.Config) *Services {
@@ -49,7 +50,8 @@ func NewServices(database *db.DB, cfg *config.Config) *Services {
 		Frigate:        frigate.NewClient(cfg.FrigateURL),
 		Vikunja:        vikunjaSvc,
 		Currency:       service.NewCurrencyService(database),
-		ChoreTemplates: service.NewChoreTemplateService(database, vikunjaSvc),
+		ChoreTemplates: service.NewChoreTemplateService(database, vikunjaSvc, loc),
+		Activity:       service.NewActivityService(database, vikunjaSvc, loc),
 	}
 }
 
@@ -93,7 +95,8 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 	vikunjaHandler := NewVikunjaHandler(svc.Vikunja)
 	choresHandler := NewChoresHandler(service.NewChoresService(database, svc.Cash), hub)
 	choreTemplatesHandler := NewChoreTemplatesHandler(svc.ChoreTemplates, hub)
-	tasksHandler := NewTasksHandler(svc.Vikunja, database)
+	tasksHandler := NewTasksHandler(svc.Vikunja, svc.Activity, database, loc)
+	activityHandler := &ActivityHandler{svc: svc.Activity}
 	uploadsHandler := NewUploadsHandler(filepath.Dir(cfg.DatabasePath))
 	immichHandler := NewImmichHandler(service.NewImmichService(database))
 	oauthReg := oauth.NewRegistry(database, cfg)
@@ -172,6 +175,7 @@ func NewRouter(database *db.DB, cfg *config.Config, svc *Services, hub *Hub, bat
 
 		r.Get("/api/chores", choresHandler.List)
 		r.Get("/api/chore-templates", choreTemplatesHandler.List)
+		r.Get("/api/activity", activityHandler.List)
 
 		r.Get("/api/currency-name", func(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]string{"name": svc.Currency.GetCurrencyName()})

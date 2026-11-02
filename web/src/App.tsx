@@ -22,6 +22,7 @@ const Weather = lazy(() => import('./pages/Weather').then((m) => ({ default: m.W
 const BatchProcesses = lazy(() => import('./pages/BatchProcesses').then((m) => ({ default: m.BatchProcesses })));
 const Chores = lazy(() => import('./pages/Chores').then((m) => ({ default: m.Chores })));
 const Tasks = lazy(() => import('./pages/Tasks').then((m) => ({ default: m.Tasks })));
+const Activity = lazy(() => import('./pages/Activity').then((m) => ({ default: m.Activity })));
 const Setup = lazy(() => import('./pages/Setup').then((m) => ({ default: m.Setup })));
 const JoinFamily = lazy(() => import('./pages/JoinFamily').then((m) => ({ default: m.JoinFamily })));
 const PairKiosk = lazy(() => import('./pages/PairKiosk').then((m) => ({ default: m.PairKiosk })));
@@ -168,6 +169,7 @@ export default function App() {
                 <Route path="/weather" element={<Weather />} />
                 <Route path="/chores" element={<Chores />} />
                 <Route path="/tasks" element={<Tasks />} />
+                <Route path="/activity" element={<Activity />} />
                 <Route path="/batch" element={<BatchProcesses />} />
                 <Route path="/settings" element={<Settings />} />
               </Route>

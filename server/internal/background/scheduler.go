@@ -21,6 +21,7 @@ type Scheduler struct {
 	engine      *ai.Engine
 	batch       *service.BatchService
 	chorePoller *service.ChorePollerService
+	activity    *service.ActivityService
 	db          *db.DB
 	broadcast   BroadcastFunc
 	timezone    string
@@ -33,6 +34,7 @@ func NewScheduler(
 	engine *ai.Engine,
 	batch *service.BatchService,
 	chorePoller *service.ChorePollerService,
+	activity *service.ActivityService,
 	database *db.DB,
 	broadcast BroadcastFunc,
 	timezone string,
@@ -44,6 +46,7 @@ func NewScheduler(
 		engine:      engine,
 		batch:       batch,
 		chorePoller: chorePoller,
+		activity:    activity,
 		db:          database,
 		broadcast:   broadcast,
 		timezone:    timezone,
@@ -115,6 +118,14 @@ func (s *Scheduler) runCalendarSync(ctx context.Context) {
 }
 
 func (s *Scheduler) runChorePoller(ctx context.Context) {
+	if err := s.chorePoller.Poll(ctx); err != nil {
+		log.Printf("initial chore poller error: %v", err)
+	}
+	if s.activity != nil {
+		if err := s.activity.SnapshotAll(ctx); err != nil {
+			log.Printf("initial activity snapshot error: %v", err)
+		}
+	}
 	ticker := time.NewTicker(2 * time.Minute)
 	defer ticker.Stop()
 
@@ -125,6 +136,11 @@ func (s *Scheduler) runChorePoller(ctx context.Context) {
 		case <-ticker.C:
 			if err := s.chorePoller.Poll(ctx); err != nil {
 				log.Printf("chore poller error: %v", err)
+			}
+			if s.activity != nil {
+				if err := s.activity.SnapshotAll(ctx); err != nil {
+					log.Printf("activity snapshot error: %v", err)
+				}
 			}
 		}
 	}

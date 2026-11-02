@@ -46,7 +46,7 @@ func main() {
 
 	batchSvc := service.NewBatchService(database)
 	chorePoller := service.NewChorePollerService(database, svc.Vikunja, svc.Cash)
-	scheduler := background.NewScheduler(svc.Calendar, svc.Weather, svc.Cash, svc.AI, batchSvc, chorePoller, database, hub.Broadcast, cfg.Timezone)
+	scheduler := background.NewScheduler(svc.Calendar, svc.Weather, svc.Cash, svc.AI, batchSvc, chorePoller, svc.Activity, database, hub.Broadcast, cfg.Timezone)
 
 	router := api.NewRouter(database, cfg, svc, hub, batchSvc, scheduler)
 

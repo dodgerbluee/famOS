@@ -1,8 +1,10 @@
 package api
 
 import (
+	"database/sql"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sandershome/server/internal/auth"
@@ -11,12 +13,19 @@ import (
 )
 
 type TasksHandler struct {
-	vikunja *service.VikunjaService
-	db      *db.DB
+	vikunja  *service.VikunjaService
+	activity *service.ActivityService
+	db       *db.DB
+	loc      *time.Location
 }
 
-func NewTasksHandler(vikunja *service.VikunjaService, database *db.DB) *TasksHandler {
-	return &TasksHandler{vikunja: vikunja, db: database}
+func choreCompletionDeadline(due time.Time, loc *time.Location) time.Time {
+	localDue := due.In(loc)
+	return time.Date(localDue.Year(), localDue.Month(), localDue.Day()+1, 3, 0, 0, 0, loc)
+}
+
+func NewTasksHandler(vikunja *service.VikunjaService, activity *service.ActivityService, database *db.DB, loc *time.Location) *TasksHandler {
+	return &TasksHandler{vikunja: vikunja, activity: activity, db: database, loc: loc}
 }
 
 func (h *TasksHandler) ListMyTasks(w http.ResponseWriter, r *http.Request) {
@@ -109,9 +118,51 @@ func (h *TasksHandler) Complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	task, err := h.vikunja.GetTask(r.Context(), taskID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "task not found")
+		return
+	}
+	memberID, role, err := h.activity.MemberForProject(user.FamilyID, task.ProjectID)
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "task not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to verify task")
+		return
+	}
+
+	kind := "task"
+	dateKey := time.Now().In(h.loc).Format("2006-01-02")
+	if task.DueDate != "" {
+		if due, parseErr := time.Parse(time.RFC3339, task.DueDate); parseErr == nil {
+			localDue := due.In(h.loc)
+			dateKey = localDue.Format("2006-01-02")
+			if role == "kid" {
+				deadline := choreCompletionDeadline(due, h.loc)
+				if time.Now().In(h.loc).After(deadline) {
+					writeError(w, http.StatusConflict, "This chore is closed. Chores can only be completed up to 3 hours after their due day.")
+					return
+				}
+			}
+		}
+	}
+	if role == "kid" {
+		kind = "chore"
+	}
+	_ = h.activity.Snapshot(r.Context(), user.FamilyID)
 	if err := h.vikunja.CompleteTask(r.Context(), taskID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to complete task")
 		return
+	}
+	if !task.Done {
+		_ = h.activity.RecordCompletion(user.FamilyID, memberID, kind, dateKey)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "completed"})
@@ -125,6 +176,20 @@ func (h *TasksHandler) Uncomplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	task, err := h.vikunja.GetTask(r.Context(), taskID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "task not found")
+		return
+	}
+	if _, _, err := h.activity.MemberForProject(user.FamilyID, task.ProjectID); err != nil {
+		writeError(w, http.StatusNotFound, "task not found")
+		return
+	}
 	if err := h.vikunja.UncompleteTask(r.Context(), taskID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to uncomplete task")
 		return

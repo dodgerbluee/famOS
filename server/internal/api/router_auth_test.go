@@ -32,7 +32,7 @@ func buildTestRouter(t *testing.T) (http.Handler, *db.DB) {
 	svc := NewServices(database, cfg)
 	batchSvc := service.NewBatchService(database)
 	chorePoller := service.NewChorePollerService(database, svc.Vikunja, svc.Cash)
-	scheduler := background.NewScheduler(svc.Calendar, svc.Weather, svc.Cash, svc.AI, batchSvc, chorePoller, database, hub.Broadcast, cfg.Timezone)
+	scheduler := background.NewScheduler(svc.Calendar, svc.Weather, svc.Cash, svc.AI, batchSvc, chorePoller, svc.Activity, database, hub.Broadcast, cfg.Timezone)
 
 	return NewRouter(database, cfg, svc, hub, batchSvc, scheduler), database
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/sandershome/server/internal/db"
@@ -19,10 +20,15 @@ type VikunjaClient interface {
 type ChoreTemplateService struct {
 	db      *db.DB
 	vikunja VikunjaClient
+	loc     *time.Location
 }
 
-func NewChoreTemplateService(database *db.DB, vikunja VikunjaClient) *ChoreTemplateService {
-	return &ChoreTemplateService{db: database, vikunja: vikunja}
+func NewChoreTemplateService(database *db.DB, vikunja VikunjaClient, locations ...*time.Location) *ChoreTemplateService {
+	loc := time.Local
+	if len(locations) > 0 && locations[0] != nil {
+		loc = locations[0]
+	}
+	return &ChoreTemplateService{db: database, vikunja: vikunja, loc: loc}
 }
 
 type TemplateTask struct {
@@ -99,6 +105,8 @@ func (s *ChoreTemplateService) CreateTemplate(ctx context.Context, req CreateTem
 	}
 
 	repeatAfter := recurrenceToRepeatAfter(req.Recurrence)
+	now := time.Now().In(s.loc)
+	dueDate := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, s.loc).Format(time.RFC3339)
 
 	for _, memberID := range req.AssignedMembers {
 		var projectID int64
@@ -116,6 +124,7 @@ func (s *ChoreTemplateService) CreateTemplate(ctx context.Context, req CreateTem
 			ProjectID:   projectID,
 			Title:       req.Title,
 			RepeatAfter: repeatAfter,
+			DueDate:     dueDate,
 			Labels:      labels,
 		})
 		if err != nil {

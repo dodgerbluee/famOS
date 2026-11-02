@@ -5,10 +5,24 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/sandershome/server/internal/auth"
 )
+
+func TestChoreCompletionDeadlineAllowsThreeHoursAfterDueDay(t *testing.T) {
+	loc, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	due := time.Date(2026, time.November, 2, 23, 59, 0, 0, loc)
+	got := choreCompletionDeadline(due, loc)
+	want := time.Date(2026, time.November, 3, 3, 0, 0, 0, loc)
+	if !got.Equal(want) {
+		t.Fatalf("deadline = %v, want %v", got, want)
+	}
+}
 
 func TestKioskCanViewAdultTasksInItsFamily(t *testing.T) {
 	router, database := buildTestRouter(t)

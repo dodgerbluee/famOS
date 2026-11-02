@@ -524,4 +524,15 @@ CREATE TABLE IF NOT EXISTS chore_completion_log (
 	member_id TEXT NOT NULL REFERENCES family_members(id) ON DELETE CASCADE,
 	processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS work_activity_daily (
+	family_id TEXT NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+	member_id TEXT NOT NULL REFERENCES family_members(id) ON DELETE CASCADE,
+	kind TEXT NOT NULL CHECK(kind IN ('chore', 'task')),
+	date_key TEXT NOT NULL,
+	total INTEGER NOT NULL DEFAULT 0,
+	completed INTEGER NOT NULL DEFAULT 0,
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY (family_id, member_id, kind, date_key)
+);
 `

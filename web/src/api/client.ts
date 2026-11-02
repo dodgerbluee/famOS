@@ -348,6 +348,15 @@ export interface VikunjaTaskSimple {
   projectName?: string;
 }
 
+export interface ActivityDay {
+  dateKey: string;
+  memberId: string;
+  memberName: string;
+  kind: 'chore' | 'task';
+  total: number;
+  completed: number;
+}
+
 export interface OAuthPublicProvider {
   name: string;
   displayName: string;

@@ -59,10 +59,10 @@ func TestCreateTemplate_SingleAssignee(t *testing.T) {
 	svc, mock, database := setupTemplateTest(t)
 
 	tmpl, err := svc.CreateTemplate(context.Background(), CreateTemplateRequest{
-		Title:        "Make your bed",
-		Icon:         "🛏️",
-		Recurrence:   "daily",
-		RewardAmount: 5,
+		Title:           "Make your bed",
+		Icon:            "🛏️",
+		Recurrence:      "daily",
+		RewardAmount:    5,
 		AssignedMembers: []string{"kid1"},
 	})
 	if err != nil {
@@ -87,6 +87,9 @@ func TestCreateTemplate_SingleAssignee(t *testing.T) {
 	}
 	if mock.createdTasks[0].RepeatAfter != 86400 {
 		t.Errorf("expected repeat_after 86400 for daily, got %d", mock.createdTasks[0].RepeatAfter)
+	}
+	if _, err := time.Parse(time.RFC3339, mock.createdTasks[0].DueDate); err != nil {
+		t.Errorf("expected a valid due date for completion cutoff, got %q", mock.createdTasks[0].DueDate)
 	}
 
 	// Template should be persisted in DB

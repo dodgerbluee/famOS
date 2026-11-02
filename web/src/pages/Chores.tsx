@@ -7,6 +7,7 @@ export function Chores() {
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState('');
   const currencyName = useCurrencyName();
 
   const kids = members.filter((m) => m.role === 'kid');
@@ -19,11 +20,13 @@ export function Chores() {
   useEffect(() => { load(); }, [load]);
 
   const handleComplete = (vikunjaTaskId: number) => {
-    api.post(`/api/tasks/${vikunjaTaskId}/complete`, {}).then(() => load()).catch(() => {});
+    setActionError('');
+    api.post(`/api/tasks/${vikunjaTaskId}/complete`, {}).then(() => load()).catch((err) => setActionError(err instanceof Error ? err.message : 'Could not complete chore.'));
   };
 
   const handleUncomplete = (vikunjaTaskId: number) => {
-    api.post(`/api/tasks/${vikunjaTaskId}/uncomplete`, {}).then(() => load()).catch(() => {});
+    setActionError('');
+    api.post(`/api/tasks/${vikunjaTaskId}/uncomplete`, {}).then(() => load()).catch((err) => setActionError(err instanceof Error ? err.message : 'Could not update chore.'));
   };
 
   const handleDelete = (id: string) => {
@@ -57,6 +60,8 @@ export function Chores() {
           {showForm ? 'Cancel' : '+ Add Chore'}
         </button>
       </div>
+
+      {actionError && <p className="rounded-control border border-negative/20 bg-negative/10 px-3 py-2 text-sm text-negative">{actionError}</p>}
 
       {showForm && (
         <ChoreForm
@@ -169,7 +174,8 @@ function ChoreRow({
                 key={kid.id}
                 onClick={() => {
                   if (!taskId) return;
-                  done ? onUncomplete(taskId) : onComplete(taskId);
+                  if (done) onUncomplete(taskId);
+                  else onComplete(taskId);
                 }}
                 disabled={!taskId}
                 className="flex items-center justify-center w-8 h-8 rounded-full transition-all active:scale-90"

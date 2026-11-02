@@ -231,6 +231,45 @@ type vikunjaAPITask struct {
 	ProjectID   int64  `json:"project_id"`
 	BucketID    int64  `json:"bucket_id"`
 	CreatedAt   string `json:"created"`
+	DoneAt      string `json:"done_at"`
+}
+
+func apiTaskToTask(t vikunjaAPITaskWithLabels) VikunjaTask {
+	task := VikunjaTask{
+		ID:          t.ID,
+		Title:       t.Title,
+		Description: t.Description,
+		Done:        t.Done,
+		Priority:    t.Priority,
+		ProjectID:   t.ProjectID,
+		BucketID:    t.BucketID,
+		CreatedAt:   t.CreatedAt,
+	}
+	if t.DueDate != "" && t.DueDate != "0001-01-01T00:00:00Z" {
+		task.DueDate = t.DueDate
+	}
+	for _, label := range t.Labels {
+		task.Labels = append(task.Labels, label.Title)
+	}
+	return task
+}
+
+func (s *VikunjaService) GetTask(ctx context.Context, taskID int64) (*VikunjaTask, error) {
+	resp, err := s.doRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/tasks/%d", taskID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("vikunja fetch task failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("vikunja task returned %d: %s", resp.StatusCode, string(body))
+	}
+	var raw vikunjaAPITaskWithLabels
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("decode vikunja task: %w", err)
+	}
+	task := apiTaskToTask(raw)
+	return &task, nil
 }
 
 type vikunjaProject struct {
@@ -418,12 +457,13 @@ type CompletedTask struct {
 	ID        int64    `json:"id"`
 	Title     string   `json:"title"`
 	DoneAt    string   `json:"doneAt"`
+	DueDate   string   `json:"dueDate,omitempty"`
 	ProjectID int64    `json:"projectId"`
 	Labels    []string `json:"labels"`
 }
 
 func (s *VikunjaService) GetCompletedTasks(ctx context.Context, projectID int64) ([]CompletedTask, error) {
-	resp, err := s.doRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/projects/%d/tasks?filter_done=true&per_page=50", projectID), nil)
+	resp, err := s.doRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/projects/%d/tasks?filter_done=true&per_page=200", projectID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("vikunja fetch completed tasks failed: %w", err)
 	}
@@ -439,6 +479,7 @@ func (s *VikunjaService) GetCompletedTasks(ctx context.Context, projectID int64)
 		Title     string `json:"title"`
 		Done      bool   `json:"done"`
 		DoneAt    string `json:"done_at"`
+		DueDate   string `json:"due_date"`
 		ProjectID int64  `json:"project_id"`
 		Labels    []struct {
 			Title string `json:"title"`
@@ -457,7 +498,11 @@ func (s *VikunjaService) GetCompletedTasks(ctx context.Context, projectID int64)
 			ID:        t.ID,
 			Title:     t.Title,
 			DoneAt:    t.DoneAt,
+			DueDate:   t.DueDate,
 			ProjectID: t.ProjectID,
+		}
+		if ct.DueDate == "0001-01-01T00:00:00Z" {
+			ct.DueDate = ""
 		}
 		for _, l := range t.Labels {
 			ct.Labels = append(ct.Labels, l.Title)
@@ -497,7 +542,7 @@ type vikunjaAPITaskWithLabels struct {
 }
 
 func (s *VikunjaService) GetTasksForProject(ctx context.Context, projectID int64) ([]VikunjaTask, error) {
-	resp, err := s.doRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/projects/%d/tasks?per_page=50", projectID), nil)
+	resp, err := s.doRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/projects/%d/tasks?per_page=200", projectID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("vikunja fetch project tasks failed: %w", err)
 	}
@@ -515,21 +560,7 @@ func (s *VikunjaService) GetTasksForProject(ctx context.Context, projectID int64
 
 	tasks := make([]VikunjaTask, 0, len(apiTasks))
 	for _, t := range apiTasks {
-		task := VikunjaTask{
-			ID:        t.ID,
-			Title:     t.Title,
-			Done:      t.Done,
-			Priority:  t.Priority,
-			ProjectID: t.ProjectID,
-			CreatedAt: t.CreatedAt,
-		}
-		if t.DueDate != "" && t.DueDate != "0001-01-01T00:00:00Z" {
-			task.DueDate = t.DueDate
-		}
-		for _, l := range t.Labels {
-			task.Labels = append(task.Labels, l.Title)
-		}
-		tasks = append(tasks, task)
+		tasks = append(tasks, apiTaskToTask(t))
 	}
 	return tasks, nil
 }

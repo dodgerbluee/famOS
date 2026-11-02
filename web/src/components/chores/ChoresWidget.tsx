@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { api, type ChoreTemplate, type FamilyMember } from '../../api/client';
 import { useQuery } from '../../lib/query';
 
 export function ChoresWidget() {
+	const [actionError, setActionError] = useState('');
   const { data: templates = [], refetch: refetchTemplates } = useQuery<ChoreTemplate[]>(
     '/api/chore-templates',
     () => api.get<ChoreTemplate[]>('/api/chore-templates'),
@@ -34,8 +36,9 @@ export function ChoresWidget() {
   const handleToggle = (e: React.MouseEvent, taskId: number | undefined, done: boolean) => {
     e.stopPropagation();
     if (!taskId) return;
+    setActionError('');
     const path = done ? `/api/tasks/${taskId}/uncomplete` : `/api/tasks/${taskId}/complete`;
-    api.post(path, {}).then(() => refetchTemplates()).catch(() => {});
+    api.post(path, {}).then(() => refetchTemplates()).catch((err) => setActionError(err instanceof Error ? err.message : 'Could not update chore.'));
   };
 
   if (visible.length === 0) {
@@ -59,6 +62,7 @@ export function ChoresWidget() {
           {doneSlots}/{totalSlots}
         </span>
       </div>
+      {actionError && <p className="mb-2 rounded-lg bg-negative/10 px-2 py-1.5 text-xs text-negative">{actionError}</p>}
 
       <div className="overflow-y-auto flex-1 pr-1">
         <div className="space-y-1.5">
